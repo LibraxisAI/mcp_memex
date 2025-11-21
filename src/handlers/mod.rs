@@ -1,0 +1,137 @@
+use anyhow::Result;
+use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, Args};
+
+pub struct MCPServer {
+    mlx_bridge: Arc<Mutex<MLXBridge>>,
+    rag: Arc<RAGPipeline>,
+    storage: Arc<StorageManager>,
+}
+
+impl MCPServer {
+    pub async fn run(self) -> Result<()> {
+        // For now, just a simple stdin/stdout loop
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        
+        let stdin = tokio::io::stdin();
+        let mut reader = BufReader::new(stdin);
+        let mut stdout = tokio::io::stdout();
+        
+        let mut line = String::new();
+        
+        while reader.read_line(&mut line).await? > 0 {
+            if let Ok(request) = serde_json::from_str::<serde_json::Value>(&line) {
+                let response = self.handle_request(request).await;
+                let response_str = serde_json::to_string(&response)? + "\n";
+                stdout.write_all(response_str.as_bytes()).await?;
+                stdout.flush().await?;
+            }
+            line.clear();
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_request(&self, request: serde_json::Value) -> serde_json::Value {
+        let method = request["method"].as_str().unwrap_or("");
+        let id = request["id"].clone();
+        
+        let result = match method {
+            "initialize" => json!({
+                "protocolVersion": "1.0",
+                "capabilities": {
+                    "tools": true,
+                    "resources": true,
+                }
+            }),
+            
+            "tools/list" => json!({
+                "tools": [
+                    {
+                        "name": "rag_index",
+                        "description": "Index a document for RAG",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"}
+                            },
+                            "required": ["path"]
+                        }
+                    },
+                    {
+                        "name": "rag_search",
+                        "description": "Search documents using RAG",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string"},
+                                "k": {"type": "integer", "default": 10}
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                ]
+            }),
+            
+            "tools/call" => {
+                let tool_name = request["params"]["name"].as_str().unwrap_or("");
+                let args = &request["params"]["arguments"];
+                
+                match tool_name {
+                    "rag_index" => {
+                        let path = args["path"].as_str().unwrap_or("");
+                        match self.rag.index_document(std::path::Path::new(path)).await {
+                            Ok(_) => json!({
+                                "content": [{"type": "text", "text": format!("Indexed: {}", path)}]
+                            }),
+                            Err(e) => json!({
+                                "error": {"message": e.to_string()}
+                            }),
+                        }
+                    },
+                    "rag_search" => {
+                        let query = args["query"].as_str().unwrap_or("");
+                        let k = args["k"].as_u64().unwrap_or(10) as usize;
+                        
+                        match self.rag.search(query, k).await {
+                            Ok(results) => json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": serde_json::to_string(&results).unwrap_or_default()
+                                }]
+                            }),
+                            Err(e) => json!({
+                                "error": {"message": e.to_string()}
+                            }),
+                        }
+                    },
+                    _ => json!({"error": {"message": "Unknown tool"}})
+                }
+            },
+            
+            _ => json!({"error": {"message": "Unknown method"}})
+        };
+        
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        })
+    }
+}
+
+pub async fn create_server(args: Args) -> Result<MCPServer> {
+    // Initialize components
+    let mlx_bridge = Arc::new(Mutex::new(MLXBridge::new().await?));
+    let storage = Arc::new(StorageManager::new(args.cache_mb, &args.chroma_path)?);
+    let rag = Arc::new(RAGPipeline::new(mlx_bridge.clone(), storage.clone()).await?);
+
+    Ok(MCPServer {
+        mlx_bridge,
+        rag,
+        storage,
+    })
+}
