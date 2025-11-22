@@ -11,8 +11,8 @@ APP_DIR="$HOME/.mcp-servers/MCPServer.app"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Copy binary
-cp target/release/mcp-rust-server "$APP_DIR/Contents/MacOS/"
+# Copy binary (crate binary name: mcp_memex)
+cp target/release/mcp_memex "$APP_DIR/Contents/MacOS/"
 
 # Create Info.plist
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
@@ -24,7 +24,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <key>CFBundleIdentifier</key>
     <string>com.maciejgad.mcp-rust</string>
     <key>CFBundleExecutable</key>
-    <string>mcp-rust-server</string>
+    <string>mcp_memex</string>
     <key>CFBundleName</key>
     <string>MCP Rust Server</string>
     <key>CFBundleVersion</key>
@@ -46,5 +46,5 @@ codesign --force --deep --sign - "$APP_DIR"
 
 echo "Done! App bundle created at: $APP_DIR"
 echo ""
-echo "To use with Claude Desktop, add to config:"
-echo '  "command": "'"$APP_DIR/Contents/MacOS/mcp-rust-server"'"'
+echo "To use with an MCP host, add to config:"
+echo '  "command": "'"$APP_DIR/Contents/MacOS/mcp_memex"'"'

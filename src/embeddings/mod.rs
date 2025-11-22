@@ -84,8 +84,9 @@ impl MLXBridge {
             return Err(anyhow!("MLX bridge disabled via DISABLE_MLX"));
         }
 
+        // Base URL for the MLX HTTP bridge. Default to localhost so it's meaningful for most users.
         let dragon_base = std::env::var("DRAGON_BASE_URL")
-            .unwrap_or_else(|_| "http://dragon.fold-antares.ts.net".to_string());
+            .unwrap_or_else(|_| "http://localhost".to_string());
         
         // Check if JIT mode (single port for all models)
         let jit_mode = std::env::var("MLX_JIT_MODE")

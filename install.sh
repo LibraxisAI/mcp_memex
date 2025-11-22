@@ -1,55 +1,37 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-echo "=== MCP Rust Server Installation ==="
-echo "Using uv for Python dependencies"
-echo ""
+echo "=== mcp_memex setup ==="
 
-# Check for uv
-if ! command -v uv &> /dev/null; then
-    echo "Error: uv not found. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
-    exit 1
+# Build Rust binary
+echo "Building release binary..."
+cargo build --release
+
+if [[ "${1:-}" == "--bundle-macos" ]]; then
+  echo "Creating macOS app bundle..."
+  ./build-macos.sh
+  BIN_PATH="$HOME/.mcp-servers/MCPServer.app/Contents/MacOS/mcp_memex"
+else
+  BIN_PATH="$(pwd)/target/release/mcp_memex"
 fi
 
-# Install Python dependencies with uv
-echo "Installing Python dependencies..."
-cd ~/.mcp-servers
-uv pip install -r pyproject.toml
-
-# Download MLX models
 echo ""
-echo "Downloading Qwen3 embedding model..."
-uv run python -c "
-from mlx_lm import load
-print('Downloading mlx-community/Qwen3-Embedding-4B-4bit-DWQ...')
-model, tokenizer = load('mlx-community/Qwen3-Embedding-4B-4bit-DWQ')
-print('✓ Embedder downloaded')
-"
-
-# Convert reranker (optional for now)
+echo "=== Done ==="
+echo "Binary: $BIN_PATH"
 echo ""
-echo "Reranker conversion:"
-echo "To convert Qwen3-Reranker-4B, run:"
-echo "  uv run python -m mlx_lm.convert --model Qwen/Qwen3-Reranker-4B --output models/Qwen3-Reranker-4B-mlx --quantize 4bit"
-echo "(Skipping for now - will use embedder for reranking)"
-
-# Build Rust server
-echo ""
-echo "Building Rust server..."
-./build-macos.sh
+echo "Example MCP host config:"
+cat <<JSON
+{
+  "mcpServers": {
+    "mcp_memex": {
+      "command": "$BIN_PATH",
+      "args": ["--log-level", "info"]
+    }
+  }
+}
+JSON
 
 echo ""
-echo "=== Installation Complete! ==="
-echo ""
-echo "Add to Claude Desktop config:"
-echo '{'
-echo '  "mcpServers": {'
-echo '    "rust-rag": {'
-echo '      "command": "'"$HOME/.mcp-servers/MCPServer.app/Contents/MacOS/mcp-rust-server"'",'
-echo '      "env": {'
-echo '        "EMBEDDER_MODEL": "mlx-community/Qwen3-Embedding-4B-4bit-DWQ",'
-echo '        "CACHE_MB": "4096"'
-echo '      }'
-echo '    }'
-echo '  }'
-echo '}'
+echo "Notes:"
+echo "- The MLX HTTP bridge is optional. By default, DRAGON_BASE_URL=http://localhost."
+echo "- To force local-only embeddings, set DISABLE_MLX=1."
