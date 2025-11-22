@@ -18,4 +18,5 @@ target/
 /.fastembed_cache
 /.ai-agents
 /.lancedb/
+/.loctree
 AGENTS.md
