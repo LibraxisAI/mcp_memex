@@ -16,9 +16,9 @@ pub struct Args {
     #[arg(long, default_value = "4096")]
     pub cache_mb: usize,
 
-    /// ChromaDB path
-    #[arg(long, default_value = "~/.mcp-servers/chromadb")]
-    pub chroma_path: String,
+    /// Path for embedded vector store (LanceDB)
+    #[arg(long, default_value = "~/.mcp-servers/mcp_memex/lancedb")]
+    pub db_path: String,
 
     /// Log level
     #[arg(long, default_value = "info")]

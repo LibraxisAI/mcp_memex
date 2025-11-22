@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, Args};
 
 pub struct MCPServer {
-    mlx_bridge: Arc<Mutex<MLXBridge>>,
+    mlx_bridge: Arc<Mutex<Option<MLXBridge>>>,
     rag: Arc<RAGPipeline>,
     storage: Arc<StorageManager>,
 }
@@ -125,8 +125,16 @@ impl MCPServer {
 
 pub async fn create_server(args: Args) -> Result<MCPServer> {
     // Initialize components
-    let mlx_bridge = Arc::new(Mutex::new(MLXBridge::new().await?));
-    let storage = Arc::new(StorageManager::new(args.cache_mb, &args.chroma_path)?);
+    let mlx_bridge = match MLXBridge::new().await {
+        Ok(mlx) => Some(mlx),
+        Err(e) => {
+            tracing::warn!("MLX bridge unavailable, falling back to fastembed only: {}", e);
+            None
+        }
+    };
+    let mlx_bridge = Arc::new(Mutex::new(mlx_bridge));
+    let storage = Arc::new(StorageManager::new(args.cache_mb, &args.db_path).await?);
+    storage.ensure_collection().await?;
     let rag = Arc::new(RAGPipeline::new(mlx_bridge.clone(), storage.clone()).await?);
 
     Ok(MCPServer {

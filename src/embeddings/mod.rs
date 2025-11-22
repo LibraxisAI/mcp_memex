@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
+use fastembed::{TextEmbedding, TextInitOptions};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize)]
 struct EmbeddingRequest {
@@ -57,8 +59,31 @@ pub struct MLXBridge {
     reranker_model: String,
 }
 
+pub struct FastEmbedder {
+    model: Mutex<TextEmbedding>,
+}
+
+impl FastEmbedder {
+    pub fn new() -> Result<Self> {
+        let model = TextEmbedding::try_new(TextInitOptions::default())?;
+        Ok(Self {
+            model: Mutex::new(model),
+        })
+    }
+
+    pub async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        let mut model = self.model.lock().await;
+        let embeddings = model.embed(texts.to_vec(), None)?;
+        Ok(embeddings)
+    }
+}
+
 impl MLXBridge {
     pub async fn new() -> Result<Self> {
+        if std::env::var("DISABLE_MLX").is_ok() {
+            return Err(anyhow!("MLX bridge disabled via DISABLE_MLX"));
+        }
+
         let dragon_base = std::env::var("DRAGON_BASE_URL")
             .unwrap_or_else(|_| "http://dragon.fold-antares.ts.net".to_string());
         
