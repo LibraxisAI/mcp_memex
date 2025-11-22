@@ -20,6 +20,7 @@ use tracing::{debug, info};
 #[derive(Debug, Serialize, Clone)]
 pub struct ChromaDocument {
     pub id: String,
+    pub namespace: String,
     pub embedding: Vec<f32>,
     pub metadata: serde_json::Value,
     pub document: String,
@@ -33,7 +34,8 @@ pub struct StorageManager {
     collection_name: String,
 }
 
-type BatchIter = RecordBatchIterator<std::vec::IntoIter<std::result::Result<RecordBatch, ArrowError>>>;
+type BatchIter =
+    RecordBatchIterator<std::vec::IntoIter<std::result::Result<RecordBatch, ArrowError>>>;
 
 impl StorageManager {
     pub async fn new(cache_mb: usize, db_path: &str) -> Result<Self> {
@@ -84,7 +86,10 @@ impl StorageManager {
                 info!("Found existing Lance table '{}'", self.collection_name);
             }
             Err(_) => {
-                info!("Lance table '{}' will be created on first insert", self.collection_name);
+                info!(
+                    "Lance table '{}' will be created on first insert",
+                    self.collection_name
+                );
             }
         }
         Ok(())
@@ -129,19 +134,23 @@ impl StorageManager {
         Ok(())
     }
 
-    pub async fn search_store(&self, embedding: Vec<f32>, k: usize) -> Result<Vec<ChromaDocument>> {
+    pub async fn search_store(
+        &self,
+        namespace: Option<&str>,
+        embedding: Vec<f32>,
+        k: usize,
+    ) -> Result<Vec<ChromaDocument>> {
         if embedding.is_empty() {
             return Ok(vec![]);
         }
         let dim = embedding.len();
         let table = self.ensure_table(dim).await?;
 
-        let mut stream = table
-            .query()
-            .limit(k)
-            .nearest_to(embedding)?
-            .execute()
-            .await?;
+        let mut query = table.query();
+        if let Some(ns) = namespace {
+            query = query.only_if(self.namespace_filter(ns).as_str());
+        }
+        let mut stream = query.nearest_to(embedding)?.limit(k).execute().await?;
 
         let mut results = Vec::new();
         while let Some(batch) = stream.try_next().await? {
@@ -150,6 +159,55 @@ impl StorageManager {
         }
         debug!("Lance returned {} results", results.len());
         Ok(results)
+    }
+
+    pub async fn get_document(&self, namespace: &str, id: &str) -> Result<Option<ChromaDocument>> {
+        let table = match self.ensure_table(0).await {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        let filter = format!(
+            "{} AND {}",
+            self.namespace_filter(namespace),
+            self.id_filter(id)
+        );
+        let mut stream = table
+            .query()
+            .only_if(filter.as_str())
+            .limit(1)
+            .execute()
+            .await?;
+        if let Some(batch) = stream.try_next().await? {
+            let mut docs = self.batch_to_docs(&batch)?;
+            if let Some(doc) = docs.pop() {
+                return Ok(Some(doc));
+            }
+        }
+        Ok(None)
+    }
+
+    pub async fn delete_document(&self, namespace: &str, id: &str) -> Result<usize> {
+        let table = match self.ensure_table(0).await {
+            Ok(t) => t,
+            Err(_) => return Ok(0),
+        };
+        let predicate = format!(
+            "{} AND {}",
+            self.namespace_filter(namespace),
+            self.id_filter(id)
+        );
+        let deleted = table.delete(predicate.as_str()).await?;
+        Ok(deleted.version as usize)
+    }
+
+    pub async fn purge_namespace(&self, namespace: &str) -> Result<usize> {
+        let table = match self.ensure_table(0).await {
+            Ok(t) => t,
+            Err(_) => return Ok(0),
+        };
+        let predicate = self.namespace_filter(namespace);
+        let deleted = table.delete(predicate.as_str()).await?;
+        Ok(deleted.version as usize)
     }
 
     pub fn get_collection_name(&self) -> &str {
@@ -171,12 +229,19 @@ impl StorageManager {
         let table = if let Ok(tbl) = maybe_table {
             tbl
         } else {
+            if dim == 0 {
+                return Err(anyhow!(
+                    "Vector table '{}' not found and dimension is unknown",
+                    self.collection_name
+                ));
+            }
             info!(
                 "Creating Lance table '{}' with vector dimension {}",
                 self.collection_name, dim
             );
             let schema = Arc::new(Schema::new(vec![
                 Field::new("id", DataType::Utf8, false),
+                Field::new("namespace", DataType::Utf8, false),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -200,7 +265,14 @@ impl StorageManager {
 
     fn docs_to_batch(&self, documents: &[ChromaDocument], dim: usize) -> Result<BatchIter> {
         let ids = documents.iter().map(|d| d.id.as_str()).collect::<Vec<_>>();
-        let texts = documents.iter().map(|d| d.document.as_str()).collect::<Vec<_>>();
+        let namespaces = documents
+            .iter()
+            .map(|d| d.namespace.as_str())
+            .collect::<Vec<_>>();
+        let texts = documents
+            .iter()
+            .map(|d| d.document.as_str())
+            .collect::<Vec<_>>();
         let metadata_strings = documents
             .iter()
             .map(|d| serde_json::to_string(&d.metadata).unwrap_or_else(|_| "{}".to_string()))
@@ -216,6 +288,7 @@ impl StorageManager {
 
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
+            Field::new("namespace", DataType::Utf8, false),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -232,16 +305,21 @@ impl StorageManager {
             schema.clone(),
             vec![
                 Arc::new(StringArray::from(ids)),
-                Arc::new(FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-                    vectors,
-                    dim as i32,
-                )),
+                Arc::new(StringArray::from(namespaces)),
+                Arc::new(
+                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                        vectors, dim as i32,
+                    ),
+                ),
                 Arc::new(StringArray::from(texts)),
                 Arc::new(StringArray::from(metadata_strings)),
             ],
         )?;
 
-        Ok(RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema))
+        Ok(RecordBatchIterator::new(
+            vec![Ok(batch)].into_iter(),
+            schema,
+        ))
     }
 
     fn batch_to_docs(&self, batch: &RecordBatch) -> Result<Vec<ChromaDocument>> {
@@ -249,6 +327,10 @@ impl StorageManager {
             .column_by_name("id")
             .and_then(|c| c.as_any().downcast_ref::<StringArray>())
             .ok_or_else(|| anyhow!("Missing id column"))?;
+        let ns_col = batch
+            .column_by_name("namespace")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+            .ok_or_else(|| anyhow!("Missing namespace column"))?;
         let text_col = batch
             .column_by_name("text")
             .and_then(|c| c.as_any().downcast_ref::<StringArray>())
@@ -273,6 +355,7 @@ impl StorageManager {
         for i in 0..batch.num_rows() {
             let id = id_col.value(i).to_string();
             let text = text_col.value(i).to_string();
+            let namespace = ns_col.value(i).to_string();
             let meta_str = metadata_col.value(i);
             let metadata: Value = serde_json::from_str(meta_str).unwrap_or_else(|_| json!({}));
 
@@ -284,11 +367,20 @@ impl StorageManager {
 
             docs.push(ChromaDocument {
                 id,
+                namespace,
                 embedding: emb,
                 metadata,
                 document: text,
             });
         }
         Ok(docs)
+    }
+
+    fn namespace_filter(&self, namespace: &str) -> String {
+        format!("namespace = '{}'", namespace.replace('\'', "''"))
+    }
+
+    fn id_filter(&self, id: &str) -> String {
+        format!("id = '{}'", id.replace('\'', "''"))
     }
 }

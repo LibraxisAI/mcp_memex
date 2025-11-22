@@ -3,7 +3,7 @@ use clap::Parser;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use mcp_memex::{Args, handlers};
+use mcp_memex::{handlers, Args};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,9 +19,7 @@ async fn main() -> Result<()> {
         _ => Level::INFO,
     };
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .finish();
+    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     info!("Starting MCP Memex");
@@ -30,7 +28,7 @@ async fn main() -> Result<()> {
 
     // TODO: Initialize MCP server
     let server = handlers::create_server(args).await?;
-    
+
     // Run server
     server.run().await?;
 

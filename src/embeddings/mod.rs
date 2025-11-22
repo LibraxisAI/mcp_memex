@@ -85,27 +85,26 @@ impl MLXBridge {
         }
 
         // Base URL for the MLX HTTP bridge. Default to localhost so it's meaningful for most users.
-        let dragon_base = std::env::var("DRAGON_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost".to_string());
-        
+        let dragon_base =
+            std::env::var("DRAGON_BASE_URL").unwrap_or_else(|_| "http://localhost".to_string());
+
         // Check if JIT mode (single port for all models)
-        let jit_mode = std::env::var("MLX_JIT_MODE")
-            .unwrap_or_else(|_| "false".to_string()) == "true";
-            
+        let jit_mode =
+            std::env::var("MLX_JIT_MODE").unwrap_or_else(|_| "false".to_string()) == "true";
+
         let (embedder_port, reranker_port) = if jit_mode {
             // JIT mode - same port for both
-            let port = std::env::var("MLX_JIT_PORT")
-                .unwrap_or_else(|_| "1234".to_string());
+            let port = std::env::var("MLX_JIT_PORT").unwrap_or_else(|_| "1234".to_string());
             (port.clone(), port)
         } else {
             // Separate ports mode
-            let embedder_port = std::env::var("EMBEDDER_PORT")
-                .unwrap_or_else(|_| "12345".to_string());
-            let reranker_port = std::env::var("RERANKER_PORT")
-                .unwrap_or_else(|_| "12346".to_string());
+            let embedder_port =
+                std::env::var("EMBEDDER_PORT").unwrap_or_else(|_| "12345".to_string());
+            let reranker_port =
+                std::env::var("RERANKER_PORT").unwrap_or_else(|_| "12346".to_string());
             (embedder_port, reranker_port)
         };
-            
+
         let embedder_model = std::env::var("EMBEDDER_MODEL")
             .unwrap_or_else(|_| "Qwen/Qwen3-Embedding-4B".to_string());
         let reranker_model = std::env::var("RERANKER_MODEL")
@@ -114,7 +113,7 @@ impl MLXBridge {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
-            
+
         let bridge = Self {
             client,
             embedder_url: format!("{}:{}/v1/embeddings", dragon_base, embedder_port),
@@ -122,30 +121,39 @@ impl MLXBridge {
             embedder_model,
             reranker_model,
         };
-        
+
         // List available models
         if let Ok(models) = bridge.list_models(&dragon_base, &embedder_port).await {
-            tracing::info!("Available models on embedder port {}: {:?}", embedder_port, models);
+            tracing::info!(
+                "Available models on embedder port {}: {:?}",
+                embedder_port,
+                models
+            );
         }
-        
+
         if !jit_mode {
             if let Ok(models) = bridge.list_models(&dragon_base, &reranker_port).await {
-                tracing::info!("Available models on reranker port {}: {:?}", reranker_port, models);
+                tracing::info!(
+                    "Available models on reranker port {}: {:?}",
+                    reranker_port,
+                    models
+                );
             }
         }
-        
+
         Ok(bridge)
     }
-    
+
     async fn list_models(&self, base_url: &str, port: &str) -> Result<Vec<String>> {
         let url = format!("{}:{}/v1/models", base_url, port);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await?
             .json::<ModelsResponse>()
             .await?;
-            
+
         Ok(response.data.into_iter().map(|m| m.id).collect())
     }
 
@@ -155,7 +163,8 @@ impl MLXBridge {
             model: self.embedder_model.clone(),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.embedder_url)
             .json(&request)
             .send()
@@ -163,25 +172,23 @@ impl MLXBridge {
             .json::<EmbeddingResponse>()
             .await?;
 
-        response.data
+        response
+            .data
             .into_iter()
             .next()
             .map(|d| d.embedding)
             .ok_or_else(|| anyhow!("No embedding returned"))
     }
 
-    pub async fn rerank(
-        &mut self,
-        query: &str,
-        documents: &[String],
-    ) -> Result<Vec<(usize, f32)>> {
+    pub async fn rerank(&mut self, query: &str, documents: &[String]) -> Result<Vec<(usize, f32)>> {
         let request = RerankRequest {
             query: query.to_string(),
             documents: documents.to_vec(),
             model: self.reranker_model.clone(),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.reranker_url)
             .json(&request)
             .send()
@@ -189,7 +196,8 @@ impl MLXBridge {
             .json::<RerankResponse>()
             .await?;
 
-        Ok(response.results
+        Ok(response
+            .results
             .into_iter()
             .map(|r| (r.index, r.score))
             .collect())
