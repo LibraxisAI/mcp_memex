@@ -2,6 +2,7 @@
 name = "mcp_memex"
 version = "0.1.1"
 edition = "2021"
+build = "src/build.rs"
 
 [dependencies]
 # Core MCP

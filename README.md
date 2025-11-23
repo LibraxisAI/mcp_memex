@@ -101,9 +101,9 @@ Tools (RPC)
  - memory_delete(namespace: string, id: string)
  - memory_purge_namespace(namespace: string)
 
-Scripts
- - build-macos.sh — builds release and creates a minimal app bundle at ~/.mcp-servers/MCPServer.app with CFBundleExecutable=mcp_memex
- - install.sh — builds the release binary; pass --bundle-macos to also create the app bundle
+ Scripts
+ - scripts/build-macos.sh — builds release and creates a minimal app bundle at ~/.mcp-servers/MCPServer.app with CFBundleExecutable=mcp_memex
+ - scripts/install.sh — builds the release binary; pass --bundle-macos to also create the app bundle
 
  Project structure
  - src/main.rs • src/lib.rs • src/handlers • src/embeddings • src/rag • src/storage

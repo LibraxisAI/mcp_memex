@@ -5,5 +5,5 @@ fn main() {
         // Propagate to dependent build scripts.
         println!("cargo:rustc-env=PROTOC={}", path.display());
     }
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/build.rs");
 }
