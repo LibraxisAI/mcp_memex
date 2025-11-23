@@ -46,9 +46,6 @@ struct ModelsResponse {
 #[derive(Debug, Deserialize)]
 struct ModelInfo {
     id: String,
-    object: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created: Option<i64>,
 }
 
 pub struct MLXBridge {
