@@ -31,6 +31,14 @@ impl RAGPipeline {
         })
     }
 
+    pub fn storage(&self) -> Arc<StorageManager> {
+        self.storage.clone()
+    }
+
+    pub async fn has_mlx(&self) -> bool {
+        self.mlx_bridge.lock().await.is_some()
+    }
+
     pub async fn index_document(&self, path: &Path, namespace: Option<&str>) -> Result<()> {
         let text = self.extract_text(path).await?;
 
@@ -253,7 +261,7 @@ impl RAGPipeline {
             return Ok(candidates.iter().map(|c| c.embedding.clone()).collect());
         }
 
-        self.fast.embed_batch(&documents.to_vec()).await
+        self.fast.embed_batch(documents).await
     }
 
     fn chunk_text(&self, text: &str, chunk_size: usize, overlap: usize) -> Result<Vec<String>> {
