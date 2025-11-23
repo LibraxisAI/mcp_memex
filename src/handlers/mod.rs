@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, ServerConfig};
 
+const MAX_CONTENT_LENGTH: usize = 5 * 1024 * 1024; // 5 MB safety guard
+
 pub struct MCPServer {
     rag: Arc<RAGPipeline>,
 }
@@ -19,14 +21,27 @@ impl MCPServer {
         let mut read_buf = [0u8; 4096];
 
         // Read framed JSON-RPC with Content-Length headers (LSP-style)
-        loop {
+        'reader: loop {
             let n = stdin.read(&mut read_buf).await?;
             if n == 0 {
                 break;
             }
             buffer.extend_from_slice(&read_buf[..n]);
 
-            while let Some((message, consumed)) = Self::try_parse_message(&buffer)? {
+            while let Some((message, consumed)) = match Self::try_parse_message(&buffer) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    let err = json!({
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32600, "message": format!("Invalid request framing: {e}")},
+                        "id": serde_json::Value::Null
+                    });
+                    let payload = serde_json::to_string(&err)?;
+                    Self::write_framed(&mut stdout, &payload).await?;
+                    buffer.clear();
+                    continue 'reader;
+                }
+            } {
                 buffer.drain(0..consumed);
                 let request: serde_json::Value = match serde_json::from_str(&message) {
                     Ok(req) => req,
@@ -34,6 +49,7 @@ impl MCPServer {
                         let err = json!({
                             "jsonrpc": "2.0",
                             "error": {"code": -32700, "message": format!("Parse error: {}", e)},
+                            "id": serde_json::Value::Null
                         });
                         let payload = serde_json::to_string(&err)?;
                         Self::write_framed(&mut stdout, &payload).await?;
@@ -329,6 +345,13 @@ impl MCPServer {
             if let Some((name, value)) = line.split_once(':') {
                 if name.trim().eq_ignore_ascii_case("content-length") {
                     let len = value.trim().parse::<usize>()?;
+                    if len > MAX_CONTENT_LENGTH {
+                        anyhow::bail!(
+                            "Content-Length {} exceeds max {} bytes",
+                            len,
+                            MAX_CONTENT_LENGTH
+                        );
+                    }
                     return Ok(len);
                 }
             }
@@ -377,7 +400,8 @@ pub async fn create_server(config: ServerConfig) -> Result<MCPServer> {
         }
     };
     let mlx_bridge = Arc::new(Mutex::new(mlx_bridge));
-    let storage = Arc::new(StorageManager::new(config.cache_mb, &config.db_path).await?);
+    let db_path = shellexpand::tilde(&config.db_path).to_string();
+    let storage = Arc::new(StorageManager::new(config.cache_mb, &db_path).await?);
     storage.ensure_collection().await?;
     let rag = Arc::new(RAGPipeline::new(mlx_bridge, storage).await?);
 

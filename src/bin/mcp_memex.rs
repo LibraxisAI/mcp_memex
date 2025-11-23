@@ -43,7 +43,7 @@ impl Args {
 }
 
 fn parse_log_level(level: &str) -> Level {
-    match level {
+    match level.to_ascii_lowercase().as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
         "info" => Level::INFO,
@@ -56,7 +56,7 @@ fn parse_log_level(level: &str) -> Level {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let config = args.clone().into_config();
+    let config = args.into_config();
 
     // Send logs to stderr to keep stdout clean for JSON-RPC.
     let subscriber = FmtSubscriber::builder()
@@ -67,8 +67,8 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     info!("Starting MCP Memex");
-    info!("Features: {}", args.features);
-    info!("Cache: {}MB", args.cache_mb);
+    info!("Features (informational): {:?}", config.features);
+    info!("Cache: {}MB", config.cache_mb);
     info!("DB Path: {}", config.db_path);
 
     let server = handlers::create_server(config).await?;

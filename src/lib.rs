@@ -10,7 +10,7 @@ pub use handlers::{create_server, MCPServer};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Enabled features (namespaced strings)
+    /// Enabled features (namespaced strings). Currently informational/reserved.
     pub features: Vec<String>,
 
     /// Cache size in MB for sled/moka
