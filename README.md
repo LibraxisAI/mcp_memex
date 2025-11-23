@@ -42,15 +42,21 @@ Embed as a library
 ```rust
 use mcp_memex::{run_stdio_server, ServerConfig};
 
-# async context
-let config = ServerConfig::default()
-    .with_db_path("/tmp/lancedb"); // override as needed
-run_stdio_server(config).await?;
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = ServerConfig::default()
+        // Override the DB path if you don't want the default under ~/.mcp-servers/...
+        .with_db_path("/tmp/lancedb");
+
+    // Stdout is reserved for JSON-RPC; logs go to stderr.
+    run_stdio_server(config).await?;
+    Ok(())
+}
 ```
 
  Configuration
  CLI flags (from src/lib.rs)
- - --features string (default "filesystem,memory,search")
+ - --features string (default "filesystem,memory,search") — currently informational/reserved
  - --cache-mb usize (default 4096)
  - --db-path string (default "~/.mcp-servers/mcp_memex/lancedb")
  - --log-level trace|debug|info|warn|error (default info)
@@ -64,9 +70,9 @@ run_stdio_server(config).await?;
  - RERANKER_PORT — non‑JIT rerank port (default 12346)
  - EMBEDDER_MODEL — embeddings model id (default Qwen/Qwen3-Embedding-4B)
  - RERANKER_MODEL — reranker model id (default Qwen/Qwen3-Reranker-4B)
-  - FASTEMBED_CACHE_PATH / HF_HUB_CACHE — if unset, the server sets both to `$HOME/.cache/fastembed` to avoid `.fastembed_cache` in each cwd
-  - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
-  - PROTOC — path to protoc if build.rs cannot find the vendored binary
+ - FASTEMBED_CACHE_PATH / HF_HUB_CACHE — if unset, the server sets both to `$HOME/.cache/fastembed` (or USERPROFILE) to avoid `.fastembed_cache` in each cwd; applies process‑wide
+ - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
+ - PROTOC — path to protoc if build.rs cannot find the vendored binary
 
 Example (MLX non‑JIT)
 ```bash

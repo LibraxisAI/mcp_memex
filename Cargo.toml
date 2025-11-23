@@ -1,12 +1,12 @@
 [package]
 name = "mcp_memex"
-version = "0.1.1"
+version = "1.5.0"
 edition = "2021"
 build = "src/build.rs"
 
 [dependencies]
 # Core MCP
-rmcp = { version = "0.9", features = ["server", "transport-io"] }
+rmcp = { version = "0.9.0", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["full"] }
 
 # Serialization

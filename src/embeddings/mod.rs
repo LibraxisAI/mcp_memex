@@ -3,6 +3,7 @@ use fastembed::{TextEmbedding, TextInitOptions};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize)]
@@ -67,8 +68,13 @@ impl FastEmbedder {
         let cache_dir = std::env::var("FASTEMBED_CACHE_PATH")
             .or_else(|_| std::env::var("HF_HUB_CACHE"))
             .unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-                format!("{}/.cache/fastembed", home)
+                let base = std::env::var("HOME")
+                    .or_else(|_| std::env::var("USERPROFILE"))
+                    .unwrap_or_else(|_| ".".to_string());
+                Path::new(&base)
+                    .join(".cache/fastembed")
+                    .to_string_lossy()
+                    .into_owned()
             });
 
         if std::env::var("FASTEMBED_CACHE_PATH").is_err() {
