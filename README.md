@@ -64,8 +64,9 @@ run_stdio_server(config).await?;
  - RERANKER_PORT — non‑JIT rerank port (default 12346)
  - EMBEDDER_MODEL — embeddings model id (default Qwen/Qwen3-Embedding-4B)
  - RERANKER_MODEL — reranker model id (default Qwen/Qwen3-Reranker-4B)
- - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
- - PROTOC — path to protoc if build.rs cannot find the vendored binary
+  - FASTEMBED_CACHE_PATH / HF_HUB_CACHE — if unset, the server sets both to `$HOME/.cache/fastembed` to avoid `.fastembed_cache` in each cwd
+  - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
+  - PROTOC — path to protoc if build.rs cannot find the vendored binary
 
 Example (MLX non‑JIT)
 ```bash

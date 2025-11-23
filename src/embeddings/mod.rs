@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use fastembed::{TextEmbedding, TextInitOptions};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize)]
@@ -62,6 +63,22 @@ pub struct FastEmbedder {
 
 impl FastEmbedder {
     pub fn new() -> Result<Self> {
+        // Default fastembed cache to ~/.cache/fastembed unless user overrides via env.
+        let cache_dir = std::env::var("FASTEMBED_CACHE_PATH")
+            .or_else(|_| std::env::var("HF_HUB_CACHE"))
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                format!("{}/.cache/fastembed", home)
+            });
+
+        if std::env::var("FASTEMBED_CACHE_PATH").is_err() {
+            std::env::set_var("FASTEMBED_CACHE_PATH", &cache_dir);
+        }
+        if std::env::var("HF_HUB_CACHE").is_err() {
+            std::env::set_var("HF_HUB_CACHE", &cache_dir);
+        }
+        fs::create_dir_all(&cache_dir)?;
+
         let model = TextEmbedding::try_new(TextInitOptions::default())?;
         Ok(Self {
             model: Mutex::new(model),
