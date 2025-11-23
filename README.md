@@ -20,7 +20,7 @@ Overview
  - IO: reqwest for HTTP; pdf-extract for PDF text
  - Transport: JSON‑RPC over stdin/stdout (compatible with MCP hosts)
 
- Entry point: src/main.rs (binary name: mcp_memex). The server logs to stdout/stderr and reads JSON‑RPC requests from stdin.
+ Binary entry point: src/bin/mcp_memex.rs (binary name: mcp_memex). Library API exposes `ServerConfig` + `run_stdio_server` for embedding; server logs to stdout/stderr and reads JSON‑RPC requests from stdin.
 
  Requirements
  - Rust toolchain with Cargo (stable)
@@ -33,9 +33,20 @@ Overview
  # build
  cargo build --release
 
- # run (uses local fastembed by default; LanceDB at ~/.mcp-servers/mcp_memex/lancedb)
- cargo run --release -- --log-level info
- ```
+# run (uses local fastembed by default; LanceDB at ~/.mcp-servers/mcp_memex/lancedb)
+cargo run --release -- --log-level info
+# logs go to stderr; stdout is reserved for JSON-RPC responses
+```
+
+Embed as a library
+```rust
+use mcp_memex::{run_stdio_server, ServerConfig};
+
+# async context
+let config = ServerConfig::default()
+    .with_db_path("/tmp/lancedb"); // override as needed
+run_stdio_server(config).await?;
+```
 
  Configuration
  CLI flags (from src/lib.rs)
@@ -53,8 +64,9 @@ Overview
  - RERANKER_PORT — non‑JIT rerank port (default 12346)
  - EMBEDDER_MODEL — embeddings model id (default Qwen/Qwen3-Embedding-4B)
  - RERANKER_MODEL — reranker model id (default Qwen/Qwen3-Reranker-4B)
- - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
- - PROTOC — path to protoc if build.rs cannot find the vendored binary
+  - FASTEMBED_CACHE_PATH / HF_HUB_CACHE — if unset, the server sets both to `$HOME/.cache/fastembed` to avoid `.fastembed_cache` in each cwd
+  - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
+  - PROTOC — path to protoc if build.rs cannot find the vendored binary
 
 Example (MLX non‑JIT)
 ```bash

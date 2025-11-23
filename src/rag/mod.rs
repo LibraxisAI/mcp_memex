@@ -253,7 +253,7 @@ impl RAGPipeline {
             return Ok(candidates.iter().map(|c| c.embedding.clone()).collect());
         }
 
-        self.fast.embed_batch(&documents.to_vec()).await
+        self.fast.embed_batch(documents).await
     }
 
     fn chunk_text(&self, text: &str, chunk_size: usize, overlap: usize) -> Result<Vec<String>> {

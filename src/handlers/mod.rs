@@ -1,48 +1,70 @@
 use anyhow::Result;
 use serde_json::json;
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, Args};
+use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, ServerConfig};
 
 pub struct MCPServer {
-    mlx_bridge: Arc<Mutex<Option<MLXBridge>>>,
     rag: Arc<RAGPipeline>,
-    storage: Arc<StorageManager>,
 }
 
 impl MCPServer {
-    pub async fn run(self) -> Result<()> {
-        // For now, just a simple stdin/stdout loop
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-        let stdin = tokio::io::stdin();
-        let mut reader = BufReader::new(stdin);
+    pub async fn run_stdio(self) -> Result<()> {
+        let mut stdin = tokio::io::stdin();
         let mut stdout = tokio::io::stdout();
+        let mut buffer = Vec::new();
+        let mut read_buf = [0u8; 4096];
 
-        let mut line = String::new();
-
-        while reader.read_line(&mut line).await? > 0 {
-            if let Ok(request) = serde_json::from_str::<serde_json::Value>(&line) {
-                let response = self.handle_request(request).await;
-                let response_str = serde_json::to_string(&response)? + "\n";
-                stdout.write_all(response_str.as_bytes()).await?;
-                stdout.flush().await?;
+        // Read framed JSON-RPC with Content-Length headers (LSP-style)
+        loop {
+            let n = stdin.read(&mut read_buf).await?;
+            if n == 0 {
+                break;
             }
-            line.clear();
+            buffer.extend_from_slice(&read_buf[..n]);
+
+            while let Some((message, consumed)) = Self::try_parse_message(&buffer)? {
+                buffer.drain(0..consumed);
+                let request: serde_json::Value = match serde_json::from_str(&message) {
+                    Ok(req) => req,
+                    Err(e) => {
+                        let err = json!({
+                            "jsonrpc": "2.0",
+                            "error": {"code": -32700, "message": format!("Parse error: {}", e)},
+                        });
+                        let payload = serde_json::to_string(&err)?;
+                        Self::write_framed(&mut stdout, &payload).await?;
+                        continue;
+                    }
+                };
+
+                let response = self.handle_request(request).await;
+                let payload = serde_json::to_string(&response)?;
+                Self::write_framed(&mut stdout, &payload).await?;
+            }
         }
 
         Ok(())
     }
 
-    async fn handle_request(&self, request: serde_json::Value) -> serde_json::Value {
+    pub async fn run(self) -> Result<()> {
+        self.run_stdio().await
+    }
+
+    pub async fn handle_request(&self, request: serde_json::Value) -> serde_json::Value {
         let method = request["method"].as_str().unwrap_or("");
         let id = request["id"].clone();
 
         let result = match method {
             "initialize" => json!({
                 "protocolVersion": "1.0",
+                "serverInfo": {
+                    "name": "mcp_memex",
+                    "version": env!("CARGO_PKG_VERSION")
+                },
                 "capabilities": {
                     "tools": true,
                     "resources": true,
@@ -301,9 +323,48 @@ impl MCPServer {
             "result": result
         })
     }
+
+    fn parse_content_length(headers: &str) -> Result<usize> {
+        for line in headers.lines() {
+            if let Some((name, value)) = line.split_once(':') {
+                if name.trim().eq_ignore_ascii_case("content-length") {
+                    let len = value.trim().parse::<usize>()?;
+                    return Ok(len);
+                }
+            }
+        }
+        anyhow::bail!("Missing Content-Length");
+    }
+
+    fn try_parse_message(buffer: &[u8]) -> Result<Option<(String, usize)>> {
+        let marker = buffer.windows(4).position(|w| w == b"\r\n\r\n");
+        let Some(marker) = marker else {
+            return Ok(None);
+        };
+
+        let headers = std::str::from_utf8(&buffer[..marker])?;
+        let content_length = Self::parse_content_length(headers)?;
+
+        let body_start = marker + 4;
+        let body_end = body_start + content_length;
+        if buffer.len() < body_end {
+            return Ok(None);
+        }
+
+        let body = std::str::from_utf8(&buffer[body_start..body_end])?.to_string();
+        Ok(Some((body, body_end)))
+    }
+
+    async fn write_framed(stdout: &mut tokio::io::Stdout, payload: &str) -> Result<()> {
+        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
+        stdout.write_all(header.as_bytes()).await?;
+        stdout.write_all(payload.as_bytes()).await?;
+        stdout.flush().await?;
+        Ok(())
+    }
 }
 
-pub async fn create_server(args: Args) -> Result<MCPServer> {
+pub async fn create_server(config: ServerConfig) -> Result<MCPServer> {
     // Initialize components
     let mlx_bridge = match MLXBridge::new().await {
         Ok(mlx) => Some(mlx),
@@ -316,13 +377,9 @@ pub async fn create_server(args: Args) -> Result<MCPServer> {
         }
     };
     let mlx_bridge = Arc::new(Mutex::new(mlx_bridge));
-    let storage = Arc::new(StorageManager::new(args.cache_mb, &args.db_path).await?);
+    let storage = Arc::new(StorageManager::new(config.cache_mb, &config.db_path).await?);
     storage.ensure_collection().await?;
-    let rag = Arc::new(RAGPipeline::new(mlx_bridge.clone(), storage.clone()).await?);
+    let rag = Arc::new(RAGPipeline::new(mlx_bridge, storage).await?);
 
-    Ok(MCPServer {
-        mlx_bridge,
-        rag,
-        storage,
-    })
+    Ok(MCPServer { rag })
 }
