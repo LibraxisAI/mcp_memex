@@ -32,6 +32,7 @@ pub struct StorageManager {
     lance: Connection,
     table: Arc<Mutex<Option<Table>>>,
     collection_name: String,
+    lance_path: String,
 }
 
 type BatchIter =
@@ -47,13 +48,13 @@ impl StorageManager {
             .build();
 
         // Persistent K/V for auxiliary state
-        let sled_path = shellexpand::tilde("~/.mcp-servers/sled").to_string();
+        let sled_path = shellexpand::tilde("~/.rmcp_servers/sled").to_string();
         let db = sled::open(sled_path)?;
 
         // Embedded LanceDB path (expand ~, allow override via env)
         let lance_env = std::env::var("LANCEDB_PATH").unwrap_or_else(|_| db_path.to_string());
         let lance_path = if lance_env.trim().is_empty() {
-            shellexpand::tilde("~/.mcp-servers/mcp_memex/lancedb").to_string()
+            shellexpand::tilde("~/.rmcp_servers/rmcp_memex/lancedb").to_string()
         } else {
             shellexpand::tilde(&lance_env).to_string()
         };
@@ -66,7 +67,12 @@ impl StorageManager {
             lance,
             table: Arc::new(Mutex::new(None)),
             collection_name: "mcp_documents".to_string(),
+            lance_path,
         })
+    }
+
+    pub fn lance_path(&self) -> &str {
+        &self.lance_path
     }
 
     pub async fn ensure_collection(&self) -> Result<()> {

@@ -1,16 +1,18 @@
 [package]
-name = "mcp_memex"
-version = "0.1.1"
+name = "rmcp_memex"
+version = "0.1.5"
 edition = "2021"
+build = "src/build.rs"
 
 [dependencies]
 # Core MCP
-rmcp = { version = "0.9", features = ["server", "transport-io"] }
+rmcp = { version = "0.9.0", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["full"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 
 # Storage
 sled = "0.34"
