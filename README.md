@@ -1,4 +1,4 @@
-mcp_memex
+rmcp_memex
 
 Lightweight Model Context Protocol (MCP) server written in Rust. It provides a local Retrieval-Augmented Generation (RAG) toolset backed by an embedded LanceDB vector store and local embeddings. If an MLX HTTP server is available, it is used for embeddings and reranking; otherwise the server falls back to on‑device embeddings via fastembed.
 
@@ -20,7 +20,7 @@ Overview
  - IO: reqwest for HTTP; pdf-extract for PDF text
  - Transport: JSON‑RPC over stdin/stdout (compatible with MCP hosts)
 
- Binary entry point: src/bin/mcp_memex.rs (binary name: mcp_memex). Library API exposes `ServerConfig` + `run_stdio_server` for embedding; server logs to stdout/stderr and reads JSON‑RPC requests from stdin.
+ Binary entry point: src/bin/rmcp_memex.rs (binary name: rmcp_memex). Library API exposes `ServerConfig` + `run_stdio_server` for embedding; server logs to stdout/stderr and reads JSON‑RPC requests from stdin.
 
  Requirements
  - Rust toolchain with Cargo (stable)
@@ -33,19 +33,19 @@ Overview
  # build
  cargo build --release
 
-# run (uses local fastembed by default; LanceDB at ~/.mcp-servers/mcp_memex/lancedb)
+# run (uses local fastembed by default; LanceDB at ~/.rmcp-servers/rmcp_memex/lancedb)
 cargo run --release -- --log-level info
 # logs go to stderr; stdout is reserved for JSON-RPC responses
 ```
 
 Embed as a library
 ```rust
-use mcp_memex::{run_stdio_server, ServerConfig};
+use rmcp_memex::{run_stdio_server, ServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = ServerConfig::default()
-        // Override the DB path if you don't want the default under ~/.mcp-servers/...
+        // Override the DB path if you don't want the default under ~/.rmcp-servers/...
         .with_db_path("/tmp/lancedb");
 
     // Stdout is reserved for JSON-RPC; logs go to stderr.
@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
  CLI flags (from src/lib.rs)
  - --features string (default "filesystem,memory,search") — currently informational/reserved
  - --cache-mb usize (default 4096)
- - --db-path string (default "~/.mcp-servers/mcp_memex/lancedb")
+ - --db-path string (default "~/.rmcp-servers/rmcp_memex/lancedb")
  - --log-level trace|debug|info|warn|error (default info)
 
  Environment variables
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
  - EMBEDDER_MODEL — embeddings model id (default Qwen/Qwen3-Embedding-4B)
  - RERANKER_MODEL — reranker model id (default Qwen/Qwen3-Reranker-4B)
  - FASTEMBED_CACHE_PATH / HF_HUB_CACHE — if unset, the server sets both to `$HOME/.cache/fastembed` (or USERPROFILE) to avoid `.fastembed_cache` in each cwd; applies process‑wide
- - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.mcp-servers/mcp_memex/lancedb)
+ - LANCEDB_PATH — overrides the --db-path for the embedded DB (default ~/.rmcp-servers/rmcp_memex/lancedb)
  - PROTOC — path to protoc if build.rs cannot find the vendored binary
 
 Example (MLX non‑JIT)
@@ -108,7 +108,7 @@ Tools (RPC)
  - memory_purge_namespace(namespace: string)
 
 Scripts
- - scripts/build-macos.sh — builds release and creates a minimal app bundle at ~/.mcp-servers/MCPServer.app with CFBundleExecutable=mcp_memex
+ - scripts/build-macos.sh — builds release and creates a minimal app bundle at ~/.rmcp-servers/MCPServer.app with CFBundleExecutable=rmcp_memex
  - scripts/install.sh — builds the release binary; pass --bundle-macos to also create the app bundle
 
  Project structure

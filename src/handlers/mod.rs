@@ -7,10 +7,9 @@ use uuid::Uuid;
 
 use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, ServerConfig};
 
-const MAX_CONTENT_LENGTH: usize = 5 * 1024 * 1024; // 5 MB safety guard
-
 pub struct MCPServer {
     rag: Arc<RAGPipeline>,
+    max_request_bytes: usize,
 }
 
 impl MCPServer {
@@ -28,7 +27,10 @@ impl MCPServer {
             }
             buffer.extend_from_slice(&read_buf[..n]);
 
-            while let Some((message, consumed)) = match Self::try_parse_message(&buffer) {
+            while let Some((message, consumed)) = match Self::try_parse_message(
+                &buffer,
+                self.max_request_bytes,
+            ) {
                 Ok(parsed) => parsed,
                 Err(e) => {
                     let err = json!({
@@ -78,7 +80,7 @@ impl MCPServer {
             "initialize" => json!({
                 "protocolVersion": "1.0",
                 "serverInfo": {
-                    "name": "mcp_memex",
+                    "name": "rmcp_memex",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
@@ -89,6 +91,15 @@ impl MCPServer {
 
             "tools/list" => json!({
                 "tools": [
+                    {
+                        "name": "health",
+                        "description": "Health/status of rmcp_memex server",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        }
+                    },
                     {
                         "name": "rag_index",
                         "description": "Index a document for RAG",
@@ -198,6 +209,19 @@ impl MCPServer {
                 let args = &request["params"]["arguments"];
 
                 match tool_name {
+                    "health" => {
+                        let status = json!({
+                            "version": env!("CARGO_PKG_VERSION"),
+                            "db_path": self.rag.storage().lance_path(),
+                            "cache_dir": std::env::var("FASTEMBED_CACHE_PATH")
+                                .or_else(|_| std::env::var("HF_HUB_CACHE"))
+                                .unwrap_or_else(|_| "not-set".to_string()),
+                            "backend": if self.rag.has_mlx().await { "mlx" } else { "fastembed" }
+                        });
+                        json!({
+                            "content": [{"type": "text", "text": serde_json::to_string(&status).unwrap_or_default()}]
+                        })
+                    }
                     "rag_index" => {
                         let path = args["path"].as_str().unwrap_or("");
                         let namespace = args["namespace"].as_str();
@@ -340,17 +364,13 @@ impl MCPServer {
         })
     }
 
-    fn parse_content_length(headers: &str) -> Result<usize> {
+    fn parse_content_length(headers: &str, max_len: usize) -> Result<usize> {
         for line in headers.lines() {
             if let Some((name, value)) = line.split_once(':') {
                 if name.trim().eq_ignore_ascii_case("content-length") {
                     let len = value.trim().parse::<usize>()?;
-                    if len > MAX_CONTENT_LENGTH {
-                        anyhow::bail!(
-                            "Content-Length {} exceeds max {} bytes",
-                            len,
-                            MAX_CONTENT_LENGTH
-                        );
+                    if len > max_len {
+                        anyhow::bail!("Content-Length {} exceeds max {} bytes", len, max_len);
                     }
                     return Ok(len);
                 }
@@ -359,15 +379,14 @@ impl MCPServer {
         anyhow::bail!("Missing Content-Length");
     }
 
-    fn try_parse_message(buffer: &[u8]) -> Result<Option<(String, usize)>> {
+    fn try_parse_message(buffer: &[u8], max_len: usize) -> Result<Option<(String, usize)>> {
         let marker = buffer.windows(4).position(|w| w == b"\r\n\r\n");
         let Some(marker) = marker else {
             return Ok(None);
         };
 
         let headers = std::str::from_utf8(&buffer[..marker])?;
-        let content_length = Self::parse_content_length(headers)?;
-
+        let content_length = Self::parse_content_length(headers, max_len)?;
         let body_start = marker + 4;
         let body_end = body_start + content_length;
         if buffer.len() < body_end {
@@ -405,5 +424,8 @@ pub async fn create_server(config: ServerConfig) -> Result<MCPServer> {
     storage.ensure_collection().await?;
     let rag = Arc::new(RAGPipeline::new(mlx_bridge, storage).await?);
 
-    Ok(MCPServer { rag })
+    Ok(MCPServer {
+        rag,
+        max_request_bytes: config.max_request_bytes,
+    })
 }

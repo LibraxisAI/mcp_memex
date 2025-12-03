@@ -10,7 +10,7 @@ pub use handlers::{create_server, MCPServer};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Enabled features (namespaced strings). Currently informational/reserved.
+    /// Enabled features (namespaced strings)
     pub features: Vec<String>,
 
     /// Cache size in MB for sled/moka
@@ -18,6 +18,9 @@ pub struct ServerConfig {
 
     /// Path for embedded vector store (LanceDB)
     pub db_path: String,
+
+    /// Max allowed request size (bytes) for JSON-RPC framing
+    pub max_request_bytes: usize,
 
     /// Default log level to use when wiring tracing
     pub log_level: Level,
@@ -32,7 +35,8 @@ impl Default for ServerConfig {
                 "search".to_string(),
             ],
             cache_mb: 4096,
-            db_path: "~/.mcp-servers/mcp_memex/lancedb".to_string(),
+            db_path: "~/.rmcp_servers/rmcp_memex/lancedb".to_string(),
+            max_request_bytes: 5 * 1024 * 1024,
             log_level: Level::INFO,
         }
     }
@@ -60,6 +64,7 @@ mod tests {
         let cfg = ServerConfig::default();
         assert!(cfg.features.contains(&"filesystem".to_string()));
         assert_eq!(cfg.cache_mb, 4096);
-        assert_eq!(cfg.db_path, "~/.mcp-servers/mcp_memex/lancedb");
+        assert_eq!(cfg.db_path, "~/.rmcp_servers/rmcp_memex/lancedb");
+        assert_eq!(cfg.max_request_bytes, 5 * 1024 * 1024);
     }
 }

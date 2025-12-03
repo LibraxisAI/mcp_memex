@@ -31,6 +31,14 @@ impl RAGPipeline {
         })
     }
 
+    pub fn storage(&self) -> Arc<StorageManager> {
+        self.storage.clone()
+    }
+
+    pub async fn has_mlx(&self) -> bool {
+        self.mlx_bridge.lock().await.is_some()
+    }
+
     pub async fn index_document(&self, path: &Path, namespace: Option<&str>) -> Result<()> {
         let text = self.extract_text(path).await?;
 

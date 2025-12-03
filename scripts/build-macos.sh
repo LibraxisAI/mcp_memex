@@ -7,12 +7,12 @@ echo "Building MCP Rust Server for macOS..."
 cargo build --release
 
 # Create app bundle
-APP_DIR="$HOME/.mcp-servers/MCPServer.app"
+APP_DIR="$HOME/.rmcp_servers/MCPServer.app"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Copy binary (crate binary name: mcp_memex)
-cp target/release/mcp_memex "$APP_DIR/Contents/MacOS/"
+# Copy binary (crate binary name: rmcp_memex)
+cp target/release/rmcp_memex "$APP_DIR/Contents/MacOS/"
 
 # Create Info.plist
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
@@ -22,9 +22,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.maciejgad.mcp-rust</string>
+    <string>com.maciejgad.rmcp-rust</string>
     <key>CFBundleExecutable</key>
-    <string>mcp_memex</string>
+    <string>rmcp_memex</string>
     <key>CFBundleName</key>
     <string>MCP Rust Server</string>
     <key>CFBundleVersion</key>
@@ -47,4 +47,4 @@ codesign --force --deep --sign - "$APP_DIR"
 echo "Done! App bundle created at: $APP_DIR"
 echo ""
 echo "To use with an MCP host, add to config:"
-echo '  "command": "'"$APP_DIR/Contents/MacOS/mcp_memex"'"'
+echo '  "command": "'"$APP_DIR/Contents/MacOS/rmcp_memex"'"'

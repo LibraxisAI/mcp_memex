@@ -93,7 +93,7 @@ impl FastEmbedder {
 
     pub async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let mut model = self.model.lock().await;
-        let embeddings = model.embed(texts.to_vec(), None)?;
+        let embeddings = model.embed(texts, None)?;
         Ok(embeddings)
     }
 }
