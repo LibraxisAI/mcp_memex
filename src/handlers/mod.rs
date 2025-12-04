@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -14,55 +14,59 @@ pub struct MCPServer {
 
 impl MCPServer {
     pub async fn run_stdio(self) -> Result<()> {
-        let mut stdin = tokio::io::stdin();
+        let stdin = tokio::io::stdin();
         let mut stdout = tokio::io::stdout();
-        let mut buffer = Vec::new();
-        let mut read_buf = [0u8; 4096];
+        let mut reader = BufReader::new(stdin);
+        let mut line = String::new();
 
-        // Read framed JSON-RPC with Content-Length headers (LSP-style)
-        'reader: loop {
-            let n = stdin.read(&mut read_buf).await?;
+        // Read newline-delimited JSON-RPC (standard MCP transport)
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line).await?;
             if n == 0 {
-                break;
+                break; // EOF
             }
-            buffer.extend_from_slice(&read_buf[..n]);
 
-            while let Some((message, consumed)) = match Self::try_parse_message(
-                &buffer,
-                self.max_request_bytes,
-            ) {
-                Ok(parsed) => parsed,
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue; // Skip empty lines
+            }
+
+            // Check size limit
+            if trimmed.len() > self.max_request_bytes {
+                let err = json!({
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32600, "message": format!("Request too large: {} bytes (max {})", trimmed.len(), self.max_request_bytes)},
+                    "id": serde_json::Value::Null
+                });
+                let payload = serde_json::to_string(&err)?;
+                stdout.write_all(payload.as_bytes()).await?;
+                stdout.write_all(b"\n").await?;
+                stdout.flush().await?;
+                continue;
+            }
+
+            let request: serde_json::Value = match serde_json::from_str(trimmed) {
+                Ok(req) => req,
                 Err(e) => {
                     let err = json!({
                         "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": format!("Invalid request framing: {e}")},
+                        "error": {"code": -32700, "message": format!("Parse error: {}", e)},
                         "id": serde_json::Value::Null
                     });
                     let payload = serde_json::to_string(&err)?;
-                    Self::write_framed(&mut stdout, &payload).await?;
-                    buffer.clear();
-                    continue 'reader;
+                    stdout.write_all(payload.as_bytes()).await?;
+                    stdout.write_all(b"\n").await?;
+                    stdout.flush().await?;
+                    continue;
                 }
-            } {
-                buffer.drain(0..consumed);
-                let request: serde_json::Value = match serde_json::from_str(&message) {
-                    Ok(req) => req,
-                    Err(e) => {
-                        let err = json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32700, "message": format!("Parse error: {}", e)},
-                            "id": serde_json::Value::Null
-                        });
-                        let payload = serde_json::to_string(&err)?;
-                        Self::write_framed(&mut stdout, &payload).await?;
-                        continue;
-                    }
-                };
+            };
 
-                let response = self.handle_request(request).await;
-                let payload = serde_json::to_string(&response)?;
-                Self::write_framed(&mut stdout, &payload).await?;
-            }
+            let response = self.handle_request(request).await;
+            let payload = serde_json::to_string(&response)?;
+            stdout.write_all(payload.as_bytes()).await?;
+            stdout.write_all(b"\n").await?;
+            stdout.flush().await?;
         }
 
         Ok(())
@@ -362,47 +366,6 @@ impl MCPServer {
             "id": id,
             "result": result
         })
-    }
-
-    fn parse_content_length(headers: &str, max_len: usize) -> Result<usize> {
-        for line in headers.lines() {
-            if let Some((name, value)) = line.split_once(':') {
-                if name.trim().eq_ignore_ascii_case("content-length") {
-                    let len = value.trim().parse::<usize>()?;
-                    if len > max_len {
-                        anyhow::bail!("Content-Length {} exceeds max {} bytes", len, max_len);
-                    }
-                    return Ok(len);
-                }
-            }
-        }
-        anyhow::bail!("Missing Content-Length");
-    }
-
-    fn try_parse_message(buffer: &[u8], max_len: usize) -> Result<Option<(String, usize)>> {
-        let marker = buffer.windows(4).position(|w| w == b"\r\n\r\n");
-        let Some(marker) = marker else {
-            return Ok(None);
-        };
-
-        let headers = std::str::from_utf8(&buffer[..marker])?;
-        let content_length = Self::parse_content_length(headers, max_len)?;
-        let body_start = marker + 4;
-        let body_end = body_start + content_length;
-        if buffer.len() < body_end {
-            return Ok(None);
-        }
-
-        let body = std::str::from_utf8(&buffer[body_start..body_end])?.to_string();
-        Ok(Some((body, body_end)))
-    }
-
-    async fn write_framed(stdout: &mut tokio::io::Stdout, payload: &str) -> Result<()> {
-        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
-        stdout.write_all(header.as_bytes()).await?;
-        stdout.write_all(payload.as_bytes()).await?;
-        stdout.flush().await?;
-        Ok(())
     }
 }
 
