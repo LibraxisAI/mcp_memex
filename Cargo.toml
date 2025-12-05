@@ -1,5 +1,5 @@
 [package]
-name = "rmcp_memex"
+name = "rmcp-memex"
 version = "0.1.9"
 edition = "2024"
 build = "src/build.rs"

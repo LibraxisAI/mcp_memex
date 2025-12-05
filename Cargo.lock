@@ -6081,7 +6081,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmcp_memex"
+name = "rmcp-memex"
 version = "0.1.9"
 dependencies = [
  "anyhow",
