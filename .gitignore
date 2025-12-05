@@ -20,3 +20,4 @@ target/
 /.lancedb/
 /.loctree
 AGENTS.md
+/lancedb

@@ -1,11 +1,11 @@
 [package]
 name = "rmcp_memex"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 build = "src/build.rs"
 description = "RAG/memory MCP server with LanceDB vector storage"
 license = "MIT"
-repository = "https://github.com/Loctree/rmcp_memex"
+repository = "https://github.com/Loctree/rmcp-memex"
 keywords = ["mcp", "rag", "embeddings", "lancedb", "vector-search"]
 categories = ["development-tools", "database"]
 
@@ -49,6 +49,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.5", features = ["derive"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
 shellexpand = "3.1"
+
+# TUI (wizard configurator)
+ratatui = "0.29"
+crossterm = "0.28"
 
 [build-dependencies]
 protoc-bin-vendored = "3"

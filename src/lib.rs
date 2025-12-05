@@ -2,6 +2,7 @@ pub mod embeddings;
 pub mod handlers;
 pub mod rag;
 pub mod storage;
+pub mod tui;
 
 use anyhow::Result;
 use tracing::Level;
@@ -11,6 +12,7 @@ pub use embeddings::{FastEmbedder, MLXBridge};
 pub use handlers::{create_server, MCPServer};
 pub use rag::{RAGPipeline, SearchResult};
 pub use storage::{ChromaDocument, StorageManager};
+pub use tui::{detect_hosts, run_wizard, HostDetection, HostKind, WizardConfig};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {

@@ -1,9 +1,9 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use rmcp_memex::{run_stdio_server, ServerConfig};
+use rmcp_memex::{run_stdio_server, run_wizard, ServerConfig, WizardConfig};
 
 fn parse_features(raw: &str) -> Vec<String> {
     raw.split(',')
@@ -29,40 +29,56 @@ struct FileConfig {
     log_level: Option<String>,
 }
 
-#[derive(Parser, Debug, Clone)]
-#[command(author, version, about, long_about = None)]
-struct Args {
+#[derive(Parser, Debug)]
+#[command(author, version, about = "RAG/memory MCP server with LanceDB vector storage", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Optional config file (TOML) to load settings from; CLI flags override file when set.
-    #[arg(long)]
+    #[arg(long, global = true)]
     config: Option<String>,
 
     /// Server mode: "memory" (memory-only, no filesystem) or "full" (all features)
-    #[arg(long, value_parser = ["memory", "full"])]
+    #[arg(long, value_parser = ["memory", "full"], global = true)]
     mode: Option<String>,
 
     /// Enable specific features (comma-separated). Overrides --mode if set.
-    #[arg(long)]
+    #[arg(long, global = true)]
     features: Option<String>,
 
     /// Cache size in MB
-    #[arg(long)]
+    #[arg(long, global = true)]
     cache_mb: Option<usize>,
 
     /// Path for embedded vector store (LanceDB)
-    #[arg(long)]
+    #[arg(long, global = true)]
     db_path: Option<String>,
 
     /// Max allowed request size in bytes for JSON-RPC framing
-    #[arg(long)]
+    #[arg(long, global = true)]
     max_request_bytes: Option<usize>,
 
     /// Log level
-    #[arg(long)]
+    #[arg(long, global = true)]
     log_level: Option<String>,
 }
 
-impl Args {
-    fn into_config(self) -> Result<ServerConfig> {
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run the MCP server (default if no subcommand specified)
+    Serve,
+
+    /// Launch interactive configuration wizard
+    Wizard {
+        /// Dry run mode - show changes without writing files
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+impl Cli {
+    fn into_server_config(self) -> Result<ServerConfig> {
         let file_cfg = self
             .config
             .as_deref()
@@ -121,21 +137,35 @@ fn parse_log_level(level: &str) -> Level {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
-    let config = args.into_config()?;
+    let cli = Cli::parse();
 
-    // Send logs to stderr to keep stdout clean for JSON-RPC.
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(config.log_level)
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
+    match cli.command {
+        Some(Commands::Wizard { dry_run }) => {
+            // Run TUI wizard (no logging setup needed - TUI handles terminal)
+            let wizard_config = WizardConfig {
+                config_path: cli.config,
+                dry_run,
+            };
+            run_wizard(wizard_config)
+        }
+        Some(Commands::Serve) | None => {
+            // Run MCP server
+            let config = cli.into_server_config()?;
 
-    info!("Starting RMCP Memex");
-    info!("Features (informational): {:?}", config.features);
-    info!("Cache: {}MB", config.cache_mb);
-    info!("DB Path: {}", config.db_path);
+            // Send logs to stderr to keep stdout clean for JSON-RPC.
+            let subscriber = FmtSubscriber::builder()
+                .with_max_level(config.log_level)
+                .with_writer(std::io::stderr)
+                .with_ansi(false)
+                .finish();
+            tracing::subscriber::set_global_default(subscriber)?;
 
-    run_stdio_server(config).await
+            info!("Starting RMCP Memex");
+            info!("Features (informational): {:?}", config.features);
+            info!("Cache: {}MB", config.cache_mb);
+            info!("DB Path: {}", config.db_path);
+
+            run_stdio_server(config).await
+        }
+    }
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.9] - 2025-12-04
+- **TUI Configuration Wizard**: Added `rmcp_memex wizard` subcommand with interactive terminal UI.
+  - Auto-detection of MCP host configurations (Codex, Cursor, Claude Desktop, JetBrains, VS Code)
+  - Step-by-step configuration: Welcome → Settings → Host Selection → Preview → Health Check → Summary
+  - Config snippet generation for TOML (Codex) and JSON (Claude, Cursor, etc.) formats
+  - Dry-run mode (`--dry-run`) for safe preview without writing files
+  - Health check: binary verification and database path validation
+- **New dependencies**: Added `ratatui` and `crossterm` for TUI rendering.
+- **CLI restructure**: Introduced subcommands (`serve`, `wizard`); `serve` is default when no subcommand specified.
+- **Repository rename**: Updated repo URL to `github.com/Loctree/rmcp-memex`.
+
 ## [0.1.8] - 2025-12-04
 - **Server modes**: Added `--mode memory|full` CLI flag and `ServerConfig::for_memory_only()` / `::for_full_rag()` factory methods for simplified configuration.
 - **Namespace conventions**: Documented recommended namespace patterns (`user:<id>`, `agent:<id>`, `session:<id>`, `kb:<name>`, `project:<name>`) in README.

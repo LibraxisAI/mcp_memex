@@ -8,6 +8,7 @@ Lightweight **Model Context Protocol (MCP)** server written in Rust. Provides a 
 - **Document Indexing**: Index UTF-8 text files and PDFs for RAG queries
 - **Namespace Isolation**: Organize data into separate namespaces
 - **Health Monitoring**: Built-in health tool for status checks
+- **Configuration Wizard**: Interactive TUI for easy setup and host configuration
 - **MCP Compatible**: Works with Claude Desktop, Codex, Cursor, and other MCP hosts
 
 ## Quick Start
@@ -16,7 +17,7 @@ Lightweight **Model Context Protocol (MCP)** server written in Rust. Provides a 
 
 ```bash
 # Clone and build
-git clone https://github.com/Loctree/rmcp_memex.git
+git clone https://github.com/Loctree/rmcp-memex.git
 cd rmcp_memex
 cargo build --release
 
@@ -35,12 +36,34 @@ Or use the install script:
 ### Run
 
 ```bash
-# Default configuration
+# Default configuration (starts MCP server)
 rmcp_memex
+
+# Explicit serve subcommand
+rmcp_memex serve
 
 # With options
 rmcp_memex --db-path ~/mydata/lancedb --log-level debug --cache-mb 2048
 ```
+
+### Configuration Wizard
+
+Interactive TUI for setting up rmcp_memex and configuring MCP host integrations:
+
+```bash
+# Launch wizard
+rmcp_memex wizard
+
+# Dry-run mode (preview changes without writing)
+rmcp_memex wizard --dry-run
+```
+
+The wizard will:
+1. Auto-detect installed MCP hosts (Codex, Cursor, Claude Desktop, JetBrains, VS Code)
+2. Guide you through memex configuration (database path, cache size, log level, mode)
+3. Generate config snippets for selected hosts
+4. Run health checks to verify setup
+5. Optionally write configuration files (with backups)
 
 ## Usage as Library
 
@@ -48,7 +71,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rmcp_memex = { git = "https://github.com/Loctree/rmcp_memex.git" }
+rmcp_memex = { git = "https://github.com/Loctree/rmcp-memex.git" }
 ```
 
 ### Example: Direct RAG Pipeline Access
