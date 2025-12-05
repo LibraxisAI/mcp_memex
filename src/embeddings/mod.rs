@@ -50,6 +50,22 @@ struct ModelInfo {
     id: String,
 }
 
+// =============================================================================
+// EMBEDDING BACKEND INTERFACE
+// =============================================================================
+//
+// To add a new embedding backend, implement a struct with the following methods:
+//
+//   async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>
+//   async fn embed(&self, text: &str) -> Result<Vec<f32>>
+//
+// Current implementations:
+//   - `FastEmbedder`: Local embeddings via fastembed (default, 384 dims)
+//   - `MLXBridge`: Remote embeddings via MLX HTTP server (Apple Silicon)
+//
+// Future: Consider adding `async_trait` crate for formal trait definition.
+// =============================================================================
+
 pub struct MLXBridge {
     client: Client,
     embedder_url: String,

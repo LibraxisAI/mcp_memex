@@ -127,6 +127,39 @@ async fn main() -> anyhow::Result<()> {
 | `memory_delete` | Delete a chunk by namespace + ID |
 | `memory_purge_namespace` | Delete all chunks in a namespace |
 
+## Namespace Conventions
+
+Namespaces provide data isolation and multi-tenancy. We recommend these naming patterns:
+
+| Pattern | Use Case | Example |
+|---------|----------|---------|
+| `user:<id>` | Per-user memory isolation | `user:alice`, `user:12345` |
+| `agent:<id>` | Per-AI-agent memory | `agent:claude`, `agent:codex` |
+| `session:<id>` | Ephemeral session data | `session:abc123` |
+| `kb:<name>` | Shared knowledge bases | `kb:docs`, `kb:codebase` |
+| `project:<name>` | Project-scoped data | `project:myapp`, `project:rmcp_memex` |
+
+### Best Practices
+
+1. **Use prefixes consistently** — helps with retention policies and access control
+2. **Keep IDs URL-safe** — avoid special characters; use alphanumeric + hyphen/underscore
+3. **Document your schema** — maintain a mapping of namespace patterns in your project
+4. **Consider lifecycle** — `session:*` for temporary, `kb:*` for persistent data
+
+### Examples
+
+```rust
+// Per-user memory
+rag.memory_upsert("user:alice", "pref1", "Likes dark mode".into(), json!({})).await?;
+
+// Shared knowledge base
+rag.memory_upsert("kb:company-docs", "doc1", "Q4 report...".into(), json!({"type": "report"})).await?;
+
+// Session-scoped (clean up after session ends)
+rag.memory_upsert("session:abc123", "context", "Current task...".into(), json!({})).await?;
+rag.purge_namespace("session:abc123").await?; // Cleanup
+```
+
 ## Configuration
 
 ### CLI Options
@@ -134,20 +167,37 @@ async fn main() -> anyhow::Result<()> {
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--config` | — | Path to TOML config file |
+| `--mode` | `full` | Server mode: `memory` (memory-only) or `full` (all features) |
 | `--db-path` | `~/.rmcp_servers/rmcp_memex/lancedb` | LanceDB storage path |
 | `--cache-mb` | `4096` | Cache size in MB |
 | `--log-level` | `info` | Logging level: trace, debug, info, warn, error |
 | `--max-request-bytes` | `5242880` (5 MB) | Max JSON-RPC request size |
-| `--features` | `filesystem,memory,search` | Feature flags (informational) |
+| `--features` | `filesystem,memory,search` | Feature flags (overrides `--mode`) |
+
+### Server Modes
+
+| Mode | Features | Use Case |
+|------|----------|----------|
+| `full` | filesystem, memory, search | Full RAG with document indexing |
+| `memory` | memory, search | Pure vector memory server (no filesystem access) |
+
+```bash
+# Memory-only mode (recommended for AI assistants)
+rmcp_memex --mode memory
+
+# Full RAG mode (default)
+rmcp_memex --mode full
+```
 
 ### TOML Config File
 
 ```toml
+mode = "memory"  # or "full"
 db_path = "~/.rmcp_servers/rmcp_memex/lancedb"
 cache_mb = 4096
 log_level = "info"
 max_request_bytes = 5242880
-features = "filesystem,memory,search"
+# features = "memory,search"  # Optional: overrides mode
 ```
 
 CLI flags override config file values.

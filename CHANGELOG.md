@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8] - 2025-12-04
+- **Server modes**: Added `--mode memory|full` CLI flag and `ServerConfig::for_memory_only()` / `::for_full_rag()` factory methods for simplified configuration.
+- **Namespace conventions**: Documented recommended namespace patterns (`user:<id>`, `agent:<id>`, `session:<id>`, `kb:<name>`, `project:<name>`) in README.
+- **Schema versioning**: Added `SCHEMA_VERSION` constant and `docs/MIGRATION.md` with migration procedures.
+- **Backend interfaces**: Documented embedding and storage backend interfaces for future extensibility.
+- **Docs cleanup**: Updated GUIDELINES.md to remove references to removed dependencies (octocrab, scraper, quick-xml).
+
 ## [0.1.7] - 2025-12-04
 - **Library-first architecture**: Refactored crate to expose full public API for library consumers.
   - Binary is now a thin wrapper (CLI + logger + `run_stdio_server()` call).

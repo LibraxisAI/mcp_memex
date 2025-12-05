@@ -47,8 +47,27 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// Create a memory-only configuration (no filesystem access).
+    /// Suitable for pure vector memory server use cases.
+    pub fn for_memory_only() -> Self {
+        Self {
+            features: vec!["memory".to_string(), "search".to_string()],
+            ..Self::default()
+        }
+    }
+
+    /// Create a full RAG configuration with all features enabled.
+    pub fn for_full_rag() -> Self {
+        Self::default()
+    }
+
     pub fn with_db_path(mut self, db_path: impl Into<String>) -> Self {
         self.db_path = db_path.into();
+        self
+    }
+
+    pub fn with_features(mut self, features: Vec<String>) -> Self {
+        self.features = features;
         self
     }
 }

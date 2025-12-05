@@ -17,6 +17,30 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
+/// Schema version for LanceDB tables. Increment when changing table structure.
+/// See docs/MIGRATION.md for migration procedures.
+pub const SCHEMA_VERSION: u32 = 1;
+
+// =============================================================================
+// STORAGE BACKEND INTERFACE
+// =============================================================================
+//
+// To add a new storage backend, implement a struct with the following methods:
+//
+//   async fn add_to_store(&self, documents: Vec<ChromaDocument>) -> Result<()>
+//   async fn get_document(&self, namespace: &str, id: &str) -> Result<Option<ChromaDocument>>
+//   async fn search(&self, namespace: Option<&str>, embedding: &[f32], k: usize) -> Result<Vec<ChromaDocument>>
+//   async fn delete(&self, namespace: &str, id: &str) -> Result<usize>
+//   async fn delete_namespace(&self, namespace: &str) -> Result<usize>
+//
+// Current implementation:
+//   - `StorageManager`: LanceDB (vector store) + sled (KV) + moka (cache)
+//
+// Future alternatives to consider:
+//   - Qdrant, Milvus, Pinecone (external vector DBs)
+//   - SQLite with vector extension
+// =============================================================================
+
 #[derive(Debug, Serialize, Clone)]
 pub struct ChromaDocument {
     pub id: String,

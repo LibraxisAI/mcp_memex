@@ -21,6 +21,7 @@ fn load_file_config(path: &str) -> Result<FileConfig> {
 
 #[derive(serde::Deserialize, Default)]
 struct FileConfig {
+    mode: Option<String>,
     features: Option<String>,
     cache_mb: Option<usize>,
     db_path: Option<String>,
@@ -35,7 +36,11 @@ struct Args {
     #[arg(long)]
     config: Option<String>,
 
-    /// Enable specific features (comma-separated)
+    /// Server mode: "memory" (memory-only, no filesystem) or "full" (all features)
+    #[arg(long, value_parser = ["memory", "full"])]
+    mode: Option<String>,
+
+    /// Enable specific features (comma-separated). Overrides --mode if set.
     #[arg(long)]
     features: Option<String>,
 
@@ -64,31 +69,41 @@ impl Args {
             .map(load_file_config)
             .transpose()?
             .unwrap_or_default();
-        let default_cfg = ServerConfig::default();
+
+        // Determine base config from mode (CLI > file > default)
+        let mode = self.mode.as_deref().or(file_cfg.mode.as_deref());
+        let base_cfg = match mode {
+            Some("memory") => ServerConfig::for_memory_only(),
+            Some("full") => ServerConfig::for_full_rag(),
+            _ => ServerConfig::default(),
+        };
+
+        // CLI --features overrides mode-derived features
+        let features = self
+            .features
+            .or(file_cfg.features)
+            .map(|s| parse_features(&s))
+            .unwrap_or(base_cfg.features);
 
         Ok(ServerConfig {
-            features: self
-                .features
-                .or(file_cfg.features)
-                .map(|s| parse_features(&s))
-                .unwrap_or(default_cfg.features),
+            features,
             cache_mb: self
                 .cache_mb
                 .or(file_cfg.cache_mb)
-                .unwrap_or(default_cfg.cache_mb),
+                .unwrap_or(base_cfg.cache_mb),
             db_path: self
                 .db_path
                 .or(file_cfg.db_path)
-                .unwrap_or(default_cfg.db_path),
+                .unwrap_or(base_cfg.db_path),
             max_request_bytes: self
                 .max_request_bytes
                 .or(file_cfg.max_request_bytes)
-                .unwrap_or(default_cfg.max_request_bytes),
+                .unwrap_or(base_cfg.max_request_bytes),
             log_level: self
                 .log_level
                 .or(file_cfg.log_level)
                 .map(|s| parse_log_level(&s))
-                .unwrap_or(default_cfg.log_level),
+                .unwrap_or(base_cfg.log_level),
         })
     }
 }
