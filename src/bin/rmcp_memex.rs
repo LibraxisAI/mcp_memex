@@ -15,7 +15,36 @@ fn parse_features(raw: &str) -> Vec<String> {
 
 fn load_file_config(path: &str) -> Result<FileConfig> {
     let expanded = shellexpand::tilde(path).to_string();
-    let contents = std::fs::read_to_string(&expanded)?;
+    // This is the START of path validation - canonicalize resolves symlinks
+    let canonical = std::path::Path::new(&expanded) // nosemgrep
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("Cannot resolve config path '{}': {}", path, e))?;
+
+    // Security: validate path is under home directory or current working directory
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .ok();
+    let cwd = std::env::current_dir().ok();
+
+    let is_safe = home
+        .as_ref()
+        .map(|h| canonical.starts_with(h))
+        .unwrap_or(false)
+        || cwd
+            .as_ref()
+            .map(|c| canonical.starts_with(c))
+            .unwrap_or(false);
+
+    if !is_safe {
+        return Err(anyhow::anyhow!(
+            "Access denied: config path '{}' is outside allowed directories",
+            path
+        ));
+    }
+
+    // Path is validated above: canonicalized + checked against HOME/CWD
+    let contents = std::fs::read_to_string(&canonical)?; // nosemgrep
     toml::from_str(&contents).map_err(Into::into)
 }
 

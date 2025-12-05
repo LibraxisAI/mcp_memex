@@ -1,11 +1,64 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde_json::json;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{ServerConfig, embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager};
+
+/// Validates a file path to prevent path traversal attacks.
+/// Returns the canonicalized path if valid, or an error if the path is unsafe.
+fn validate_path(path_str: &str) -> Result<std::path::PathBuf> {
+    if path_str.is_empty() {
+        return Err(anyhow!("Path cannot be empty"));
+    }
+
+    // Expand ~ to home directory
+    let expanded = shellexpand::tilde(path_str).to_string();
+    // This IS the path validation/sanitization function - not a vulnerability
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let path = Path::new(&expanded);
+
+    // Check for obvious path traversal patterns before canonicalization
+    let path_string = path_str.to_string();
+    if path_string.contains("..") {
+        return Err(anyhow!("Path traversal detected: '..' not allowed"));
+    }
+
+    // Canonicalize to resolve symlinks and get absolute path
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| anyhow!("Cannot resolve path '{}': {}", path_str, e))?;
+
+    // Get user's home directory as safe base
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .ok();
+
+    // Allow paths under home directory or current working directory
+    let cwd = std::env::current_dir().ok();
+
+    let is_safe = home
+        .as_ref()
+        .map(|h| canonical.starts_with(h))
+        .unwrap_or(false)
+        || cwd
+            .as_ref()
+            .map(|c| canonical.starts_with(c))
+            .unwrap_or(false);
+
+    if !is_safe {
+        return Err(anyhow!(
+            "Access denied: path '{}' is outside allowed directories",
+            path_str
+        ));
+    }
+
+    Ok(canonical)
+}
 
 pub struct MCPServer {
     rag: Arc<RAGPipeline>,
@@ -227,15 +280,24 @@ impl MCPServer {
                         })
                     }
                     "rag_index" => {
-                        let path = args["path"].as_str().unwrap_or("");
+                        let path_str = args["path"].as_str().unwrap_or("");
                         let namespace = args["namespace"].as_str();
-                        match self
-                            .rag
-                            .index_document(std::path::Path::new(path), namespace)
-                            .await
-                        {
+
+                        // Validate path to prevent path traversal attacks
+                        let validated_path = match validate_path(path_str) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                return json!({
+                                    "jsonrpc": "2.0",
+                                    "error": {"code": -32602, "message": e.to_string()},
+                                    "id": id
+                                });
+                            }
+                        };
+
+                        match self.rag.index_document(&validated_path, namespace).await {
                             Ok(_) => json!({
-                                "content": [{"type": "text", "text": format!("Indexed: {}", path)}]
+                                "content": [{"type": "text", "text": format!("Indexed: {}", path_str)}]
                             }),
                             Err(e) => json!({
                                 "error": {"message": e.to_string()}
