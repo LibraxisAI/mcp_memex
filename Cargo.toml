@@ -1,8 +1,21 @@
 [package]
 name = "rmcp_memex"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 build = "src/build.rs"
+description = "RAG/memory MCP server with LanceDB vector storage"
+license = "MIT"
+repository = "https://github.com/Loctree/rmcp_memex"
+keywords = ["mcp", "rag", "embeddings", "lancedb", "vector-search"]
+categories = ["development-tools", "database"]
+
+[lib]
+name = "rmcp_memex"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmcp_memex"
+path = "src/bin/rmcp_memex.rs"
 
 [dependencies]
 # Core MCP

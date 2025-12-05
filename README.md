@@ -42,6 +42,77 @@ rmcp_memex
 rmcp_memex --db-path ~/mydata/lancedb --log-level debug --cache-mb 2048
 ```
 
+## Usage as Library
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+rmcp_memex = { git = "https://github.com/Loctree/rmcp_memex.git" }
+```
+
+### Example: Direct RAG Pipeline Access
+
+```rust
+use rmcp_memex::{RAGPipeline, StorageManager, ServerConfig};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Initialize storage
+    let storage = Arc::new(StorageManager::new(4096, "~/.my_app/lancedb").await?);
+    storage.ensure_collection().await?;
+
+    // Create RAG pipeline (no MLX bridge)
+    let mlx = Arc::new(Mutex::new(None));
+    let rag = RAGPipeline::new(mlx, storage).await?;
+
+    // Index text
+    rag.memory_upsert(
+        "my_namespace",
+        "doc1".to_string(),
+        "Important information to remember".to_string(),
+        serde_json::json!({"source": "manual"}),
+    ).await?;
+
+    // Search
+    let results = rag.memory_search("my_namespace", "important", 5).await?;
+    for r in results {
+        println!("{}: {} (score: {})", r.id, r.text, r.score);
+    }
+
+    Ok(())
+}
+```
+
+### Example: Run Full MCP Server Programmatically
+
+```rust
+use rmcp_memex::{run_stdio_server, ServerConfig};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = ServerConfig::default()
+        .with_db_path("~/custom/lancedb");
+    
+    run_stdio_server(config).await
+}
+```
+
+### Exported Types
+
+| Type | Description |
+|------|-------------|
+| `ServerConfig` | Configuration for server/pipeline |
+| `RAGPipeline` | Core RAG operations: index, search, memory |
+| `SearchResult` | Search result with id, text, score, metadata |
+| `StorageManager` | LanceDB + sled + moka cache layer |
+| `ChromaDocument` | Document struct for storage |
+| `FastEmbedder` | Local embeddings via fastembed |
+| `MLXBridge` | Optional MLX HTTP bridge for Apple Silicon |
+| `MCPServer` | MCP protocol handler |
+
 ## MCP Tools
 
 | Tool | Description |

@@ -3,7 +3,7 @@ use clap::Parser;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use rmcp_memex::{handlers, ServerConfig};
+use rmcp_memex::{run_stdio_server, ServerConfig};
 
 fn parse_features(raw: &str) -> Vec<String> {
     raw.split(',')
@@ -122,8 +122,5 @@ async fn main() -> Result<()> {
     info!("Cache: {}MB", config.cache_mb);
     info!("DB Path: {}", config.db_path);
 
-    let server = handlers::create_server(config).await?;
-    server.run_stdio().await?;
-
-    Ok(())
+    run_stdio_server(config).await
 }

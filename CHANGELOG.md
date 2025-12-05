@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7] - 2025-12-04
+- **Library-first architecture**: Refactored crate to expose full public API for library consumers.
+  - Binary is now a thin wrapper (CLI + logger + `run_stdio_server()` call).
+  - Re-exports: `RAGPipeline`, `SearchResult`, `StorageManager`, `ChromaDocument`, `FastEmbedder`, `MLXBridge`, `MCPServer`, `ServerConfig`.
+- Added explicit `[lib]` and `[[bin]]` sections to `Cargo.toml`.
+- Added crate metadata: description, license, repository, keywords, categories.
+- Enables direct integration as a dependency (e.g., for loctree embedding pipelines).
+
 ## [0.1.6] - 2025-12-04
 - **Transport fix**: Switched from LSP-style Content-Length framing to newline-delimited JSON (standard MCP transport). Fixes compatibility with Codex and other MCP hosts.
 - **Dependency optimization**: Removed unused crates (`octocrab`, `scraper`, `quick-xml`); disabled LanceDB cloud features (`aws`, `azure`, `gcs`, `oss`, `dynamodb`). Reduced unique dependencies from ~1011 to ~618 (~39% reduction).

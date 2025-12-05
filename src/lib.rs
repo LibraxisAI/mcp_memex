@@ -6,7 +6,11 @@ pub mod storage;
 use anyhow::Result;
 use tracing::Level;
 
+// Re-export core types for library consumers
+pub use embeddings::{FastEmbedder, MLXBridge};
 pub use handlers::{create_server, MCPServer};
+pub use rag::{RAGPipeline, SearchResult};
+pub use storage::{ChromaDocument, StorageManager};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
