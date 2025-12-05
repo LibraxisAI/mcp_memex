@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use mcp_memex::{rag::RAGPipeline, storage::StorageManager};
+use rmcp_memex::{rag::RAGPipeline, storage::StorageManager};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;

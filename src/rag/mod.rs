@@ -31,6 +31,14 @@ impl RAGPipeline {
         })
     }
 
+    pub fn storage(&self) -> Arc<StorageManager> {
+        self.storage.clone()
+    }
+
+    pub async fn has_mlx(&self) -> bool {
+        self.mlx_bridge.lock().await.is_some()
+    }
+
     pub async fn index_document(&self, path: &Path, namespace: Option<&str>) -> Result<()> {
         let text = self.extract_text(path).await?;
 
@@ -217,6 +225,8 @@ impl RAGPipeline {
         }
 
         // Default: treat as UTF-8 text
+        // Path is validated by caller (handlers::validate_path) before reaching this private method
+        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         tokio::fs::read_to_string(path).await.map_err(|e| e.into())
     }
 

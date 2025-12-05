@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arrow_array::types::Float32Type;
 use arrow_array::{
     FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
@@ -7,15 +7,39 @@ use arrow_schema::{ArrowError, DataType, Field, Schema};
 use futures::TryStreamExt;
 use lancedb::connection::Connection;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use lancedb::{connect, Table};
+use lancedb::{Table, connect};
 use moka::future::Cache;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sled::Db;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
+
+/// Schema version for LanceDB tables. Increment when changing table structure.
+/// See docs/MIGRATION.md for migration procedures.
+pub const SCHEMA_VERSION: u32 = 1;
+
+// =============================================================================
+// STORAGE BACKEND INTERFACE
+// =============================================================================
+//
+// To add a new storage backend, implement a struct with the following methods:
+//
+//   async fn add_to_store(&self, documents: Vec<ChromaDocument>) -> Result<()>
+//   async fn get_document(&self, namespace: &str, id: &str) -> Result<Option<ChromaDocument>>
+//   async fn search(&self, namespace: Option<&str>, embedding: &[f32], k: usize) -> Result<Vec<ChromaDocument>>
+//   async fn delete(&self, namespace: &str, id: &str) -> Result<usize>
+//   async fn delete_namespace(&self, namespace: &str) -> Result<usize>
+//
+// Current implementation:
+//   - `StorageManager`: LanceDB (vector store) + sled (KV) + moka (cache)
+//
+// Future alternatives to consider:
+//   - Qdrant, Milvus, Pinecone (external vector DBs)
+//   - SQLite with vector extension
+// =============================================================================
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ChromaDocument {
@@ -32,6 +56,7 @@ pub struct StorageManager {
     lance: Connection,
     table: Arc<Mutex<Option<Table>>>,
     collection_name: String,
+    lance_path: String,
 }
 
 type BatchIter =
@@ -47,13 +72,13 @@ impl StorageManager {
             .build();
 
         // Persistent K/V for auxiliary state
-        let sled_path = shellexpand::tilde("~/.mcp-servers/sled").to_string();
+        let sled_path = shellexpand::tilde("~/.rmcp_servers/sled").to_string();
         let db = sled::open(sled_path)?;
 
         // Embedded LanceDB path (expand ~, allow override via env)
         let lance_env = std::env::var("LANCEDB_PATH").unwrap_or_else(|_| db_path.to_string());
         let lance_path = if lance_env.trim().is_empty() {
-            shellexpand::tilde("~/.mcp-servers/mcp_memex/lancedb").to_string()
+            shellexpand::tilde("~/.rmcp_servers/rmcp_memex/lancedb").to_string()
         } else {
             shellexpand::tilde(&lance_env).to_string()
         };
@@ -66,7 +91,12 @@ impl StorageManager {
             lance,
             table: Arc::new(Mutex::new(None)),
             collection_name: "mcp_documents".to_string(),
+            lance_path,
         })
+    }
+
+    pub fn lance_path(&self) -> &str {
+        &self.lance_path
     }
 
     pub async fn ensure_collection(&self) -> Result<()> {

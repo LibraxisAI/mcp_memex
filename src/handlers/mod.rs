@@ -1,66 +1,125 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde_json::json;
+use std::path::Path;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, ServerConfig};
+use crate::{ServerConfig, embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager};
 
-const MAX_CONTENT_LENGTH: usize = 5 * 1024 * 1024; // 5 MB safety guard
+/// Validates a file path to prevent path traversal attacks.
+/// Returns the canonicalized path if valid, or an error if the path is unsafe.
+fn validate_path(path_str: &str) -> Result<std::path::PathBuf> {
+    if path_str.is_empty() {
+        return Err(anyhow!("Path cannot be empty"));
+    }
+
+    // Expand ~ to home directory
+    let expanded = shellexpand::tilde(path_str).to_string();
+    // This IS the path validation/sanitization function - not a vulnerability
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let path = Path::new(&expanded);
+
+    // Check for obvious path traversal patterns before canonicalization
+    let path_string = path_str.to_string();
+    if path_string.contains("..") {
+        return Err(anyhow!("Path traversal detected: '..' not allowed"));
+    }
+
+    // Canonicalize to resolve symlinks and get absolute path
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| anyhow!("Cannot resolve path '{}': {}", path_str, e))?;
+
+    // Get user's home directory as safe base
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .ok();
+
+    // Allow paths under home directory or current working directory
+    let cwd = std::env::current_dir().ok();
+
+    let is_safe = home
+        .as_ref()
+        .map(|h| canonical.starts_with(h))
+        .unwrap_or(false)
+        || cwd
+            .as_ref()
+            .map(|c| canonical.starts_with(c))
+            .unwrap_or(false);
+
+    if !is_safe {
+        return Err(anyhow!(
+            "Access denied: path '{}' is outside allowed directories",
+            path_str
+        ));
+    }
+
+    Ok(canonical)
+}
 
 pub struct MCPServer {
     rag: Arc<RAGPipeline>,
+    max_request_bytes: usize,
 }
 
 impl MCPServer {
     pub async fn run_stdio(self) -> Result<()> {
-        let mut stdin = tokio::io::stdin();
+        let stdin = tokio::io::stdin();
         let mut stdout = tokio::io::stdout();
-        let mut buffer = Vec::new();
-        let mut read_buf = [0u8; 4096];
+        let mut reader = BufReader::new(stdin);
+        let mut line = String::new();
 
-        // Read framed JSON-RPC with Content-Length headers (LSP-style)
-        'reader: loop {
-            let n = stdin.read(&mut read_buf).await?;
+        // Read newline-delimited JSON-RPC (standard MCP transport)
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line).await?;
             if n == 0 {
-                break;
+                break; // EOF
             }
-            buffer.extend_from_slice(&read_buf[..n]);
 
-            while let Some((message, consumed)) = match Self::try_parse_message(&buffer) {
-                Ok(parsed) => parsed,
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue; // Skip empty lines
+            }
+
+            // Check size limit
+            if trimmed.len() > self.max_request_bytes {
+                let err = json!({
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32600, "message": format!("Request too large: {} bytes (max {})", trimmed.len(), self.max_request_bytes)},
+                    "id": serde_json::Value::Null
+                });
+                let payload = serde_json::to_string(&err)?;
+                stdout.write_all(payload.as_bytes()).await?;
+                stdout.write_all(b"\n").await?;
+                stdout.flush().await?;
+                continue;
+            }
+
+            let request: serde_json::Value = match serde_json::from_str(trimmed) {
+                Ok(req) => req,
                 Err(e) => {
                     let err = json!({
                         "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": format!("Invalid request framing: {e}")},
+                        "error": {"code": -32700, "message": format!("Parse error: {}", e)},
                         "id": serde_json::Value::Null
                     });
                     let payload = serde_json::to_string(&err)?;
-                    Self::write_framed(&mut stdout, &payload).await?;
-                    buffer.clear();
-                    continue 'reader;
+                    stdout.write_all(payload.as_bytes()).await?;
+                    stdout.write_all(b"\n").await?;
+                    stdout.flush().await?;
+                    continue;
                 }
-            } {
-                buffer.drain(0..consumed);
-                let request: serde_json::Value = match serde_json::from_str(&message) {
-                    Ok(req) => req,
-                    Err(e) => {
-                        let err = json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32700, "message": format!("Parse error: {}", e)},
-                            "id": serde_json::Value::Null
-                        });
-                        let payload = serde_json::to_string(&err)?;
-                        Self::write_framed(&mut stdout, &payload).await?;
-                        continue;
-                    }
-                };
+            };
 
-                let response = self.handle_request(request).await;
-                let payload = serde_json::to_string(&response)?;
-                Self::write_framed(&mut stdout, &payload).await?;
-            }
+            let response = self.handle_request(request).await;
+            let payload = serde_json::to_string(&response)?;
+            stdout.write_all(payload.as_bytes()).await?;
+            stdout.write_all(b"\n").await?;
+            stdout.flush().await?;
         }
 
         Ok(())
@@ -78,7 +137,7 @@ impl MCPServer {
             "initialize" => json!({
                 "protocolVersion": "1.0",
                 "serverInfo": {
-                    "name": "mcp_memex",
+                    "name": "rmcp_memex",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
@@ -89,6 +148,15 @@ impl MCPServer {
 
             "tools/list" => json!({
                 "tools": [
+                    {
+                        "name": "health",
+                        "description": "Health/status of rmcp_memex server",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        }
+                    },
                     {
                         "name": "rag_index",
                         "description": "Index a document for RAG",
@@ -198,16 +266,38 @@ impl MCPServer {
                 let args = &request["params"]["arguments"];
 
                 match tool_name {
+                    "health" => {
+                        let status = json!({
+                            "version": env!("CARGO_PKG_VERSION"),
+                            "db_path": self.rag.storage().lance_path(),
+                            "cache_dir": std::env::var("FASTEMBED_CACHE_PATH")
+                                .or_else(|_| std::env::var("HF_HUB_CACHE"))
+                                .unwrap_or_else(|_| "not-set".to_string()),
+                            "backend": if self.rag.has_mlx().await { "mlx" } else { "fastembed" }
+                        });
+                        json!({
+                            "content": [{"type": "text", "text": serde_json::to_string(&status).unwrap_or_default()}]
+                        })
+                    }
                     "rag_index" => {
-                        let path = args["path"].as_str().unwrap_or("");
+                        let path_str = args["path"].as_str().unwrap_or("");
                         let namespace = args["namespace"].as_str();
-                        match self
-                            .rag
-                            .index_document(std::path::Path::new(path), namespace)
-                            .await
-                        {
+
+                        // Validate path to prevent path traversal attacks
+                        let validated_path = match validate_path(path_str) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                return json!({
+                                    "jsonrpc": "2.0",
+                                    "error": {"code": -32602, "message": e.to_string()},
+                                    "id": id
+                                });
+                            }
+                        };
+
+                        match self.rag.index_document(&validated_path, namespace).await {
                             Ok(_) => json!({
-                                "content": [{"type": "text", "text": format!("Indexed: {}", path)}]
+                                "content": [{"type": "text", "text": format!("Indexed: {}", path_str)}]
                             }),
                             Err(e) => json!({
                                 "error": {"message": e.to_string()}
@@ -339,52 +429,6 @@ impl MCPServer {
             "result": result
         })
     }
-
-    fn parse_content_length(headers: &str) -> Result<usize> {
-        for line in headers.lines() {
-            if let Some((name, value)) = line.split_once(':') {
-                if name.trim().eq_ignore_ascii_case("content-length") {
-                    let len = value.trim().parse::<usize>()?;
-                    if len > MAX_CONTENT_LENGTH {
-                        anyhow::bail!(
-                            "Content-Length {} exceeds max {} bytes",
-                            len,
-                            MAX_CONTENT_LENGTH
-                        );
-                    }
-                    return Ok(len);
-                }
-            }
-        }
-        anyhow::bail!("Missing Content-Length");
-    }
-
-    fn try_parse_message(buffer: &[u8]) -> Result<Option<(String, usize)>> {
-        let marker = buffer.windows(4).position(|w| w == b"\r\n\r\n");
-        let Some(marker) = marker else {
-            return Ok(None);
-        };
-
-        let headers = std::str::from_utf8(&buffer[..marker])?;
-        let content_length = Self::parse_content_length(headers)?;
-
-        let body_start = marker + 4;
-        let body_end = body_start + content_length;
-        if buffer.len() < body_end {
-            return Ok(None);
-        }
-
-        let body = std::str::from_utf8(&buffer[body_start..body_end])?.to_string();
-        Ok(Some((body, body_end)))
-    }
-
-    async fn write_framed(stdout: &mut tokio::io::Stdout, payload: &str) -> Result<()> {
-        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
-        stdout.write_all(header.as_bytes()).await?;
-        stdout.write_all(payload.as_bytes()).await?;
-        stdout.flush().await?;
-        Ok(())
-    }
 }
 
 pub async fn create_server(config: ServerConfig) -> Result<MCPServer> {
@@ -405,5 +449,8 @@ pub async fn create_server(config: ServerConfig) -> Result<MCPServer> {
     storage.ensure_collection().await?;
     let rag = Arc::new(RAGPipeline::new(mlx_bridge, storage).await?);
 
-    Ok(MCPServer { rag })
+    Ok(MCPServer {
+        rag,
+        max_request_bytes: config.max_request_bytes,
+    })
 }

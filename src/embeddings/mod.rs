@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use fastembed::{TextEmbedding, TextInitOptions};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,22 @@ struct ModelInfo {
     id: String,
 }
 
+// =============================================================================
+// EMBEDDING BACKEND INTERFACE
+// =============================================================================
+//
+// To add a new embedding backend, implement a struct with the following methods:
+//
+//   async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>
+//   async fn embed(&self, text: &str) -> Result<Vec<f32>>
+//
+// Current implementations:
+//   - `FastEmbedder`: Local embeddings via fastembed (default, 384 dims)
+//   - `MLXBridge`: Remote embeddings via MLX HTTP server (Apple Silicon)
+//
+// Future: Consider adding `async_trait` crate for formal trait definition.
+// =============================================================================
+
 pub struct MLXBridge {
     client: Client,
     embedder_url: String,
@@ -77,11 +93,14 @@ impl FastEmbedder {
                     .into_owned()
             });
 
+        // SAFETY: These env vars are set once during initialization, before any
+        // multi-threaded operations begin. The fastembed/HF libraries read these
+        // vars to determine cache locations.
         if std::env::var("FASTEMBED_CACHE_PATH").is_err() {
-            std::env::set_var("FASTEMBED_CACHE_PATH", &cache_dir);
+            unsafe { std::env::set_var("FASTEMBED_CACHE_PATH", &cache_dir) };
         }
         if std::env::var("HF_HUB_CACHE").is_err() {
-            std::env::set_var("HF_HUB_CACHE", &cache_dir);
+            unsafe { std::env::set_var("HF_HUB_CACHE", &cache_dir) };
         }
         fs::create_dir_all(&cache_dir)?;
 
@@ -93,7 +112,7 @@ impl FastEmbedder {
 
     pub async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let mut model = self.model.lock().await;
-        let embeddings = model.embed(texts.to_vec(), None)?;
+        let embeddings = model.embed(texts, None)?;
         Ok(embeddings)
     }
 }
@@ -151,14 +170,12 @@ impl MLXBridge {
             );
         }
 
-        if !jit_mode {
-            if let Ok(models) = bridge.list_models(&dragon_base, &reranker_port).await {
-                tracing::info!(
-                    "Available models on reranker port {}: {:?}",
-                    reranker_port,
-                    models
-                );
-            }
+        if !jit_mode && let Ok(models) = bridge.list_models(&dragon_base, &reranker_port).await {
+            tracing::info!(
+                "Available models on reranker port {}: {:?}",
+                reranker_port,
+                models
+            );
         }
 
         Ok(bridge)
