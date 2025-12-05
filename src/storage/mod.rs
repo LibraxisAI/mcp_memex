@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arrow_array::types::Float32Type;
 use arrow_array::{
     FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
@@ -7,10 +7,10 @@ use arrow_schema::{ArrowError, DataType, Field, Schema};
 use futures::TryStreamExt;
 use lancedb::connection::Connection;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use lancedb::{connect, Table};
+use lancedb::{Table, connect};
 use moka::future::Cache;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sled::Db;
 use std::sync::Arc;
 use std::time::Duration;

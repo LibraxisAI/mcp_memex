@@ -6,5 +6,5 @@ mod app;
 mod host_detection;
 mod ui;
 
-pub use app::{run_wizard, WizardConfig};
-pub use host_detection::{detect_hosts, HostDetection, HostFormat, HostKind};
+pub use app::{WizardConfig, run_wizard};
+pub use host_detection::{HostDetection, HostFormat, HostKind, detect_hosts};

@@ -2,16 +2,16 @@
 //!
 //! Main application state and step management for the configuration wizard.
 
-use crate::tui::host_detection::{detect_hosts, generate_snippet, HostDetection, HostKind};
 use crate::ServerConfig;
+use crate::tui::host_detection::{HostDetection, HostKind, detect_hosts, generate_snippet};
 use anyhow::Result;
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
-use std::io::{stdout, Stdout};
+use std::io::{Stdout, stdout};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -413,12 +413,11 @@ fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| render(f, app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    app.handle_key(key.code);
-                }
-            }
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            app.handle_key(key.code);
         }
 
         if app.should_quit {

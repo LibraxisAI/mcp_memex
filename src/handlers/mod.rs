@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::{embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager, ServerConfig};
+use crate::{ServerConfig, embeddings::MLXBridge, rag::RAGPipeline, storage::StorageManager};
 
 pub struct MCPServer {
     rag: Arc<RAGPipeline>,

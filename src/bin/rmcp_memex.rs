@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use rmcp_memex::{run_stdio_server, run_wizard, ServerConfig, WizardConfig};
+use rmcp_memex::{ServerConfig, WizardConfig, run_stdio_server, run_wizard};
 
 fn parse_features(raw: &str) -> Vec<String> {
     raw.split(',')

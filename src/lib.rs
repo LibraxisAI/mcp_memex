@@ -9,10 +9,10 @@ use tracing::Level;
 
 // Re-export core types for library consumers
 pub use embeddings::{FastEmbedder, MLXBridge};
-pub use handlers::{create_server, MCPServer};
+pub use handlers::{MCPServer, create_server};
 pub use rag::{RAGPipeline, SearchResult};
 pub use storage::{ChromaDocument, StorageManager};
-pub use tui::{detect_hosts, run_wizard, HostDetection, HostKind, WizardConfig};
+pub use tui::{HostDetection, HostKind, WizardConfig, detect_hosts, run_wizard};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {

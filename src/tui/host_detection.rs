@@ -2,7 +2,6 @@
 //!
 //! Scans known locations for MCP host configurations (Codex, Cursor, Claude Desktop, JetBrains).
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -140,42 +139,42 @@ fn get_host_config_path(kind: HostKind) -> Option<(PathBuf, HostFormat)> {
 fn parse_toml_mcp_servers(content: &str) -> Vec<McpServerEntry> {
     let mut servers = Vec::new();
 
-    if let Ok(value) = content.parse::<toml::Value>() {
-        if let Some(mcp_servers) = value.get("mcp_servers").and_then(|v| v.as_table()) {
-            for (name, config) in mcp_servers {
-                let command = config
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+    if let Ok(value) = content.parse::<toml::Value>()
+        && let Some(mcp_servers) = value.get("mcp_servers").and_then(|v| v.as_table())
+    {
+        for (name, config) in mcp_servers {
+            let command = config
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-                let args = config
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            let args = config
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
 
-                let env = config
-                    .get("env")
-                    .and_then(|v| v.as_table())
-                    .map(|t| {
-                        t.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            let env = config
+                .get("env")
+                .and_then(|v| v.as_table())
+                .map(|t| {
+                    t.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
 
-                servers.push(McpServerEntry {
-                    name: name.clone(),
-                    command,
-                    args,
-                    env,
-                });
-            }
+            servers.push(McpServerEntry {
+                name: name.clone(),
+                command,
+                args,
+                env,
+            });
         }
     }
 
@@ -303,24 +302,6 @@ args = ["--db-path", "{}", "--log-level", "info"]
         }
         None => String::new(),
     }
-}
-
-/// Generate a diff between current and proposed configuration.
-#[allow(dead_code)]
-pub fn generate_diff(
-    detection: &HostDetection,
-    binary_path: &str,
-    db_path: &str,
-) -> Result<(String, String)> {
-    let before = if detection.exists {
-        std::fs::read_to_string(&detection.path).unwrap_or_else(|_| "(empty)".to_string())
-    } else {
-        "(file does not exist)".to_string()
-    };
-
-    let after = generate_snippet(detection.kind, binary_path, db_path);
-
-    Ok((before, after))
 }
 
 #[cfg(test)]
