@@ -1,6 +1,11 @@
 # Changelog
 
 ## [0.1.9] - 2025-12-04
+- **Security: Path traversal protection**: Added `validate_path()` function to prevent path traversal attacks in `rag_index` and config file loading. Paths are validated against HOME/CWD directories.
+- **Dependency updates**:
+  - `rmcp`: 0.9.0 → 0.10.0 (MCP SDK update)
+  - `crossterm`: 0.28 → 0.29
+- **Rust edition 2024**: Migrated to Rust 2024 edition.
 - **TUI Configuration Wizard**: Added `rmcp_memex wizard` subcommand with interactive terminal UI.
   - Auto-detection of MCP host configurations (Codex, Cursor, Claude Desktop, JetBrains, VS Code)
   - Step-by-step configuration: Welcome → Settings → Host Selection → Preview → Health Check → Summary

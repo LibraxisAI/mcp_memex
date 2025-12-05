@@ -19,7 +19,7 @@ path = "src/bin/rmcp_memex.rs"
 
 [dependencies]
 # Core MCP
-rmcp = { version = "0.9.0", features = ["server", "transport-io"] }
+rmcp = { version = "0.10", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["full"] }
 
 # Serialization
@@ -52,7 +52,7 @@ shellexpand = "3.1"
 
 # TUI (wizard configurator)
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 
 [build-dependencies]
 protoc-bin-vendored = "3"
